@@ -88,11 +88,6 @@ return [
 
         'currency' => [
             'enabled' => true,
-
-            /*
-             * نرخ‌ها روزانه‌اند؛ یک ساعت کش باعث کاهش درخواست‌های
-             * خارجی می‌شود و همچنان داده مناسب نمایش داده می‌شود.
-             */
             'rate_cache_ttl' => 3600,
             'state_ttl' => 300,
 
@@ -101,12 +96,32 @@ return [
                 'window_seconds' => 60,
             ],
 
-            /*
-             * Frankfurter رایگان است و API Key لازم ندارد.
-             */
             'provider' => [
                 'base_url' =>
                     'https://api.frankfurter.dev/v2',
+            ],
+        ],
+
+        'countries' => [
+            'enabled' => true,
+
+            /*
+             * اطلاعات کشورها کم‌تغییر است و یک روز کش می‌شود.
+             * کشور تصادفی عمداً کش نمی‌شود.
+             */
+            'cache_ttl' => 86400,
+            'state_ttl' => 300,
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+
+            /*
+             * کاملاً رایگان، بدون API Key و بدون ثبت‌نام.
+             */
+            'provider' => [
+                'base_url' => 'https://countries.dev',
             ],
         ],
     ],

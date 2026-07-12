@@ -12,6 +12,8 @@ use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Core\CoreModule;
+use SmartToolbox\Modules\Countries\CountriesDevProvider;
+use SmartToolbox\Modules\Countries\CountriesModule;
 use SmartToolbox\Modules\Currency\CurrencyModule;
 use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\Weather\WeatherModule;
@@ -275,6 +277,47 @@ try {
         );
 
         $currencyModule->register($router);
+    }
+
+    if (
+        (bool) $config->get(
+            'modules.countries.enabled',
+            true
+        )
+    ) {
+        $countryProvider = new CountriesDevProvider(
+            http: $http,
+            baseUrl: (string) $config->get(
+                'modules.countries.provider.base_url'
+            )
+        );
+
+        $countriesModule = new CountriesModule(
+            provider: $countryProvider,
+            cache: $cache,
+            rateLimiter: $rateLimiter,
+            states: $conversationStates,
+            logFile: (string) $config->get('paths.logs')
+                . '/countries.log',
+            cacheTtl: (int) $config->get(
+                'modules.countries.cache_ttl',
+                86400
+            ),
+            stateTtl: (int) $config->get(
+                'modules.countries.state_ttl',
+                300
+            ),
+            maxAttempts: (int) $config->get(
+                'modules.countries.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $config->get(
+                'modules.countries.rate_limit.window_seconds',
+                60
+            )
+        );
+
+        $countriesModule->register($router);
     }
 
     $processor = new UpdateProcessor(

@@ -104,6 +104,7 @@ final class CoreModule implements ModuleInterface
         $context->reply(
             "🧰 منوی اصلی جعبه ابزار\n\n"
             . "🌤 آب‌وهوا و پیش‌بینی چندروزه\n"
+            . "🌍 اطلاعات کشورها\n"
             . "💱 نرخ و تبدیل ارزهای رسمی\n"
             . "🐶 تصویر تصادفی سگ\n"
             . "🐱 تصویر تصادفی گربه\n"
@@ -123,6 +124,8 @@ final class CoreModule implements ModuleInterface
             . "/menu — نمایش منوی اصلی\n"
             . "/help — نمایش راهنما\n"
             . "/weather Tehran — آب‌وهوای یک شهر\n"
+            . "/country Iran — اطلاعات یک کشور\n"
+            . "/randomcountry — کشور تصادفی\n"
             . "/currency 100 USD EUR — تبدیل ارز\n"
             . "/currencies — نمونه کدهای ارزی\n"
             . "/dog — دریافت تصویر سگ\n"
@@ -131,13 +134,13 @@ final class CoreModule implements ModuleInterface
             . "/cancel — لغو عملیات مرحله‌ای\n\n"
             . "نمونه‌ها:\n"
             . "/weather تهران\n"
-            . "/currency 100 USD EUR\n"
-            . "/currency 1 دلار یورو\n\n"
+            . "/country ایران\n"
+            . "/country JP\n"
+            . "/currency 100 USD EUR\n\n"
             . "در چت خصوصی می‌توانی از دکمه‌های منو "
             . "هم استفاده کنی.\n\n"
             . "در گروه، دستور را همراه ورودی بفرست؛ مثلاً:\n"
-            . "/weather@SmartToolboxFaBot Shiraz\n"
-            . "/currency@SmartToolboxFaBot 100 USD EUR"
+            . "/country@SmartToolboxFaBot Germany"
         );
     }
 
@@ -145,7 +148,7 @@ final class CoreModule implements ModuleInterface
     {
         $context->reply(
             "این بخش در حال آماده‌سازی است. 🛠\n\n"
-            . 'در مرحله بعد به API واقعی متصل می‌شود.'
+            . 'در مرحله بعد به قابلیت واقعی متصل می‌شود.'
         );
     }
 
@@ -161,7 +164,15 @@ final class CoreModule implements ModuleInterface
                         'text' => '🌤 آب‌وهوا',
                     ],
                     [
+                        'text' => '🌍 کشورها',
+                    ],
+                ],
+                [
+                    [
                         'text' => '💱 نرخ ارز',
+                    ],
+                    [
+                        'text' => '🧰 ابزارها',
                     ],
                 ],
                 [
@@ -177,13 +188,8 @@ final class CoreModule implements ModuleInterface
                 ],
                 [
                     [
-                        'text' => '🧰 ابزارها',
-                    ],
-                    [
                         'text' => '⚙️ تنظیمات',
                     ],
-                ],
-                [
                     [
                         'text' => 'ℹ️ راهنما',
                     ],
