@@ -1,0 +1,35 @@
+# Dependencies
+/vendor/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+/config/local.php
+
+# Database
+/storage/*.sqlite
+/storage/*.sqlite-shm
+/storage/*.sqlite-wal
+/storage/*.db
+
+# Runtime data
+/storage/logs/*
+!/storage/logs/.gitkeep
+/storage/cache/*
+!/storage/cache/.gitkeep
+/storage/backups/*
+!/storage/backups/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# Operating systems
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+.phpunit.cache/
+coverage/
