@@ -18,7 +18,9 @@
         }
     },
     "scripts": {
-        "check": "php scripts/check.php"
+        "check": "php scripts/check.php",
+        "migrate": "php scripts/migrate.php",
+        "telegram:get-me": "php scripts/get_me.php"
     },
     "config": {
         "sort-packages": true,

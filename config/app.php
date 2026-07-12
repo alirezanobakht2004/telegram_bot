@@ -13,6 +13,7 @@ return [
     'telegram' => [
         'username' => 'SmartToolboxFaBot',
         'token' => '',
+        'webhook_url' => '',
         'webhook_secret' => '',
         'max_connections' => 2,
     ],
