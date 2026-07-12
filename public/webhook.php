@@ -10,6 +10,7 @@ use SmartToolbox\Core\HttpClient;
 use SmartToolbox\Core\RateLimiter;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
+use SmartToolbox\Core\UserPreferenceStore;
 use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Core\CoreModule;
 use SmartToolbox\Modules\Countries\CountriesDevProvider;
@@ -17,6 +18,7 @@ use SmartToolbox\Modules\Countries\CountriesModule;
 use SmartToolbox\Modules\Currency\CurrencyModule;
 use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\Utilities\UtilitiesModule;
+use SmartToolbox\Modules\Settings\SettingsModule;
 use SmartToolbox\Modules\Weather\WeatherModule;
 
 $rootPath = dirname(__DIR__);
@@ -150,6 +152,10 @@ try {
      * تمام ماژول‌های مرحله‌ای از یک Store مشترک استفاده می‌کنند.
      */
     $conversationStates = new ConversationStateStore(
+        $pdo
+    );
+
+    $userPreferences = new UserPreferenceStore(
         $pdo
     );
 
@@ -330,11 +336,19 @@ try {
         $utilitiesModule = new UtilitiesModule(
             rateLimiter: $rateLimiter,
             states: $conversationStates,
+            preferences: $userPreferences,
             logFile: (string) $config->get('paths.logs')
                 . '/utilities.log',
-            timezone: (string) $config->get(
-                'app.timezone',
-                'Asia/Tehran'
+            defaultTimezone: (string) $config->get(
+                'modules.settings.default_timezone',
+                (string) $config->get(
+                    'app.timezone',
+                    'Asia/Tehran'
+                )
+            ),
+            defaultPasswordLength: (int) $config->get(
+                'modules.utilities.default_password_length',
+                20
             ),
             stateTtl: (int) $config->get(
                 'modules.utilities.state_ttl',
@@ -355,6 +369,38 @@ try {
         );
 
         $utilitiesModule->register($router);
+    }
+
+
+    if (
+        (bool) $config->get(
+            'modules.settings.enabled',
+            true
+        )
+    ) {
+        $settingsModule = new SettingsModule(
+            preferences: $userPreferences,
+            states: $conversationStates,
+            logFile: (string) $config->get('paths.logs')
+                . '/settings.log',
+            defaultTimezone: (string) $config->get(
+                'modules.settings.default_timezone',
+                (string) $config->get(
+                    'app.timezone',
+                    'Asia/Tehran'
+                )
+            ),
+            defaultPasswordLength: (int) $config->get(
+                'modules.settings.default_password_length',
+                20
+            ),
+            stateTtl: (int) $config->get(
+                'modules.settings.state_ttl',
+                300
+            )
+        );
+
+        $settingsModule->register($router);
     }
 
     $processor = new UpdateProcessor(

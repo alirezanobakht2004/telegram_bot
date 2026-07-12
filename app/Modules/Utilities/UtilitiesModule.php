@@ -12,6 +12,7 @@ use SmartToolbox\Core\ConversationStateStore;
 use SmartToolbox\Core\MessageContext;
 use SmartToolbox\Core\ModuleInterface;
 use SmartToolbox\Core\RateLimiter;
+use SmartToolbox\Core\UserPreferenceStore;
 use Throwable;
 
 final class UtilitiesModule implements ModuleInterface
@@ -28,8 +29,10 @@ final class UtilitiesModule implements ModuleInterface
     public function __construct(
         private readonly RateLimiter $rateLimiter,
         private readonly ConversationStateStore $states,
+        private readonly UserPreferenceStore $preferences,
         private readonly string $logFile,
-        private readonly string $timezone = 'Asia/Tehran',
+        private readonly string $defaultTimezone = 'Asia/Tehran',
+        private readonly int $defaultPasswordLength = 20,
         private readonly int $stateTtl = 300,
         private readonly int $maxAttempts = 60,
         private readonly int $windowSeconds = 60,
@@ -391,7 +394,9 @@ final class UtilitiesModule implements ModuleInterface
         }
 
         try {
-            $length = 20;
+            $length = $this->passwordLengthFor(
+                $context
+            );
 
             if (trim($arguments) !== '') {
                 $normalized = $this->normalizeDigits(
@@ -982,8 +987,12 @@ final class UtilitiesModule implements ModuleInterface
                 $this->normalizeDigits($arguments)
             );
 
+            $timezoneName = $this->timezoneFor(
+                $context
+            );
+
             $timezone = new DateTimeZone(
-                $this->timezone
+                $timezoneName
             );
 
             if ($input === '') {
@@ -1012,7 +1021,7 @@ final class UtilitiesModule implements ModuleInterface
                 "🕒 تبدیل زمان\n\n"
                 . "Unix timestamp:\n"
                 . "`{$date->getTimestamp()}`\n\n"
-                . "زمان {$this->timezone}:\n"
+                . "زمان {$timezoneName}:\n"
                 . $date->format('Y-m-d H:i:s P')
                 . "\n\nUTC:\n"
                 . $utc->format('Y-m-d H:i:s \U\T\C')
@@ -1083,6 +1092,58 @@ final class UtilitiesModule implements ModuleInterface
         );
 
         return false;
+    }
+
+    private function passwordLengthFor(
+        MessageContext $context
+    ): int {
+        $fallback = max(
+            8,
+            min(128, $this->defaultPasswordLength)
+        );
+
+        $stored = $this->preferences->get(
+            $context->actorKey(),
+            'password_length'
+        );
+
+        if (
+            $stored === null
+            || preg_match('/^\d+$/', $stored) !== 1
+        ) {
+            return $fallback;
+        }
+
+        $length = (int) $stored;
+
+        return $length >= 8 && $length <= 128
+            ? $length
+            : $fallback;
+    }
+
+    private function timezoneFor(
+        MessageContext $context
+    ): string {
+        $stored = $this->preferences->get(
+            $context->actorKey(),
+            'timezone'
+        );
+
+        $timezone = $stored !== null
+            ? trim($stored)
+            : trim($this->defaultTimezone);
+
+        if ($timezone === '') {
+            $timezone = 'Asia/Tehran';
+        }
+
+        try {
+            new DateTimeZone($timezone);
+
+            return $timezone;
+        } catch (Throwable) {
+            return 'Asia/Tehran';
+        }
     }
 
     private function generatePassword(

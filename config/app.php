@@ -125,11 +125,23 @@ return [
             'enabled' => true,
             'state_ttl' => 300,
             'max_input_length' => 2500,
+            'default_password_length' => 20,
 
             'rate_limit' => [
                 'max_attempts' => 60,
                 'window_seconds' => 60,
             ],
+        ],
+
+        /*
+         * تنظیمات در SQLite ذخیره می‌شوند و هیچ سرویس خارجی
+         * یا هزینه‌ای ندارند.
+         */
+        'settings' => [
+            'enabled' => true,
+            'state_ttl' => 300,
+            'default_timezone' => 'Asia/Tehran',
+            'default_password_length' => 20,
         ],
     ],
 

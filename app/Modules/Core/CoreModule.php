@@ -110,7 +110,7 @@ final class CoreModule implements ModuleInterface
             . "🐶 تصویر تصادفی سگ\n"
             . "🐱 تصویر تصادفی گربه\n"
             . "🦊 تصویر تصادفی روباه\n"
-            . "⚙️ تنظیمات حساب — به‌زودی\n"
+            . "⚙️ تنظیمات شخصی\n"
             . "ℹ️ راهنمای ربات",
             $options
         );
@@ -136,6 +136,9 @@ final class CoreModule implements ModuleInterface
             . "/random 1 100 — عدد تصادفی\n"
             . "/coin — شیر یا خط\n"
             . "/timestamp — زمان یونیکس\n"
+            . "/settings — تنظیمات شخصی\n"
+            . "/settimezone Asia/Tehran — منطقه زمانی\n"
+            . "/setpasswordlength 24 — طول پیش‌فرض رمز\n"
             . "/dog — دریافت تصویر سگ\n"
             . "/cat — دریافت تصویر گربه\n"
             . "/fox — دریافت تصویر روباه\n"
@@ -208,8 +211,6 @@ final class CoreModule implements ModuleInterface
      */
     private function comingSoonButtons(): array
     {
-        return [
-            '⚙️ تنظیمات',
-        ];
+        return [];
     }
 }
