@@ -14,7 +14,11 @@ final class FileCache
     ) {
         if (
             !is_dir($this->directory)
-            && !mkdir($this->directory, 0700, true)
+            && !mkdir(
+                $this->directory,
+                0700,
+                true
+            )
             && !is_dir($this->directory)
         ) {
             throw new RuntimeException(
@@ -34,36 +38,12 @@ final class FileCache
             return null;
         }
 
-        $contents = file_get_contents($path);
-
-        if ($contents === false) {
-            return null;
-        }
-
-        try {
-            $payload = json_decode(
-                $contents,
-                true,
-                512,
-                JSON_THROW_ON_ERROR
-            );
-        } catch (JsonException) {
-            @unlink($path);
-
-            return null;
-        }
+        $payload = $this->readPayload($path);
 
         if (
-            !is_array($payload)
-            || !is_int($payload['expires_at'] ?? null)
-            || !array_key_exists('value', $payload)
+            $payload === null
+            || $payload['expires_at'] <= time()
         ) {
-            @unlink($path);
-
-            return null;
-        }
-
-        if ($payload['expires_at'] <= time()) {
             @unlink($path);
 
             return null;
@@ -83,8 +63,19 @@ final class FileCache
             );
         }
 
+        $key = trim($key);
+
+        if ($key === '') {
+            throw new RuntimeException(
+                'Cache key cannot be empty.'
+            );
+        }
+
         $payload = [
-            'expires_at' => time() + $ttlSeconds,
+            'key' => $key,
+            'created_at' => time(),
+            'expires_at' =>
+                time() + $ttlSeconds,
             'value' => $value,
         ];
 
@@ -103,7 +94,8 @@ final class FileCache
         }
 
         $path = $this->path($key);
-        $temporaryPath = $path . '.'
+        $temporaryPath = $path
+            . '.'
             . bin2hex(random_bytes(8))
             . '.tmp';
 
@@ -121,7 +113,10 @@ final class FileCache
 
         @chmod($temporaryPath, 0600);
 
-        if (is_file($path) && !@unlink($path)) {
+        if (
+            is_file($path)
+            && !@unlink($path)
+        ) {
             @unlink($temporaryPath);
 
             throw new RuntimeException(
@@ -159,7 +154,14 @@ final class FileCache
         }
 
         $value = $resolver();
-        $this->put($key, $value, $ttlSeconds);
+
+        if ($value !== null) {
+            $this->put(
+                $key,
+                $value,
+                $ttlSeconds
+            );
+        }
 
         return $value;
     }
@@ -175,43 +177,17 @@ final class FileCache
 
     public function prune(): int
     {
-        $files = glob($this->directory . '/*.json');
-
-        if ($files === false) {
-            return 0;
-        }
-
         $deleted = 0;
 
-        foreach ($files as $file) {
-            $contents = file_get_contents($file);
-
-            if ($contents === false) {
-                continue;
-            }
-
-            try {
-                $payload = json_decode(
-                    $contents,
-                    true,
-                    512,
-                    JSON_THROW_ON_ERROR
-                );
-            } catch (JsonException) {
-                if (@unlink($file)) {
-                    $deleted++;
-                }
-
-                continue;
-            }
-
-            $expiresAt = is_array($payload)
-                ? ($payload['expires_at'] ?? null)
-                : null;
+        foreach ($this->files() as $file) {
+            $payload = $this->readPayload(
+                $file
+            );
 
             if (
-                !is_int($expiresAt)
-                || $expiresAt <= time()
+                $payload === null
+                || $payload['expires_at']
+                    <= time()
             ) {
                 if (@unlink($file)) {
                     $deleted++;
@@ -222,9 +198,183 @@ final class FileCache
         return $deleted;
     }
 
+    public function clear(
+        ?string $keyPrefix = null
+    ): int {
+        $prefix = $keyPrefix !== null
+            ? trim($keyPrefix)
+            : null;
+        $deleted = 0;
+
+        foreach ($this->files() as $file) {
+            if (
+                $prefix !== null
+                && $prefix !== ''
+            ) {
+                $payload =
+                    $this->readPayload($file);
+                $key = is_array($payload)
+                    ? ($payload['key'] ?? null)
+                    : null;
+
+                if (
+                    !is_string($key)
+                    || !str_starts_with(
+                        $key,
+                        $prefix
+                    )
+                ) {
+                    continue;
+                }
+            }
+
+            if (@unlink($file)) {
+                $deleted++;
+            }
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * @return array{
+     *     files: int,
+     *     bytes: int,
+     *     expired: int,
+     *     unidentified: int
+     * }
+     */
+    public function stats(
+        ?string $keyPrefix = null
+    ): array {
+        $prefix = $keyPrefix !== null
+            ? trim($keyPrefix)
+            : null;
+
+        $result = [
+            'files' => 0,
+            'bytes' => 0,
+            'expired' => 0,
+            'unidentified' => 0,
+        ];
+
+        foreach ($this->files() as $file) {
+            $payload =
+                $this->readPayload($file);
+            $key = is_array($payload)
+                ? ($payload['key'] ?? null)
+                : null;
+
+            if (
+                $prefix !== null
+                && $prefix !== ''
+                && (
+                    !is_string($key)
+                    || !str_starts_with(
+                        $key,
+                        $prefix
+                    )
+                )
+            ) {
+                continue;
+            }
+
+            $result['files']++;
+
+            $size = filesize($file);
+
+            if (is_int($size)) {
+                $result['bytes'] += $size;
+            }
+
+            if ($payload === null) {
+                $result['expired']++;
+                $result['unidentified']++;
+
+                continue;
+            }
+
+            if (!is_string($key)) {
+                $result['unidentified']++;
+            }
+
+            if (
+                $payload['expires_at']
+                <= time()
+            ) {
+                $result['expired']++;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function files(): array
+    {
+        $files = glob(
+            $this->directory . '/*.json'
+        );
+
+        return is_array($files)
+            ? array_values($files)
+            : [];
+    }
+
+    /**
+     * @return array{
+     *     key?: string,
+     *     created_at?: int,
+     *     expires_at: int,
+     *     value: mixed
+     * }|null
+     */
+    private function readPayload(
+        string $path
+    ): ?array {
+        $contents = file_get_contents(
+            $path
+        );
+
+        if ($contents === false) {
+            return null;
+        }
+
+        try {
+            $payload = json_decode(
+                $contents,
+                true,
+                512,
+                JSON_THROW_ON_ERROR
+            );
+        } catch (JsonException) {
+            return null;
+        }
+
+        if (
+            !is_array($payload)
+            || !is_int(
+                $payload['expires_at']
+                ?? null
+            )
+            || !array_key_exists(
+                'value',
+                $payload
+            )
+        ) {
+            return null;
+        }
+
+        return $payload;
+    }
+
     private function path(string $key): string
     {
-        if (trim($key) === '') {
+        $key = trim($key);
+
+        if ($key === '') {
             throw new RuntimeException(
                 'Cache key cannot be empty.'
             );

@@ -8,6 +8,7 @@ use SmartToolbox\Core\Database;
 use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\HttpClient;
 use SmartToolbox\Core\RateLimiter;
+use SmartToolbox\Core\RuntimeSettings;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Core\UserPreferenceStore;
@@ -115,6 +116,11 @@ try {
         (string) $config->get('database.path')
     );
 
+    $runtime = new RuntimeSettings(
+        $config,
+        $pdo
+    );
+
     $telegram = new TelegramClient(
         (string) $config->get('telegram.token')
     );
@@ -131,15 +137,15 @@ try {
             'http.user_agent',
             'SmartToolboxFaBot/1.0'
         ),
-        connectTimeout: (int) $config->get(
+        connectTimeout: (int) $runtime->get(
             'http.connect_timeout',
             4
         ),
-        timeout: (int) $config->get(
+        timeout: (int) $runtime->get(
             'http.timeout',
             8
         ),
-        maxResponseBytes: (int) $config->get(
+        maxResponseBytes: (int) $runtime->get(
             'http.max_response_bytes',
             1048576
         )
@@ -164,7 +170,7 @@ try {
     );
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.animals.enabled',
             true
         )
@@ -184,15 +190,15 @@ try {
             ),
             logFile: (string) $config->get('paths.logs')
                 . '/animals.log',
-            cacheTtl: (int) $config->get(
+            cacheTtl: (int) $runtime->get(
                 'modules.animals.cache_ttl',
                 5
             ),
-            maxAttempts: (int) $config->get(
+            maxAttempts: (int) $runtime->get(
                 'modules.animals.rate_limit.max_attempts',
                 30
             ),
-            windowSeconds: (int) $config->get(
+            windowSeconds: (int) $runtime->get(
                 'modules.animals.rate_limit.window_seconds',
                 60
             )
@@ -202,7 +208,7 @@ try {
     }
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.weather.enabled',
             true
         )
@@ -220,27 +226,27 @@ try {
             ),
             logFile: (string) $config->get('paths.logs')
                 . '/weather.log',
-            geocodingCacheTtl: (int) $config->get(
+            geocodingCacheTtl: (int) $runtime->get(
                 'modules.weather.geocoding_cache_ttl',
                 86400
             ),
-            forecastCacheTtl: (int) $config->get(
+            forecastCacheTtl: (int) $runtime->get(
                 'modules.weather.forecast_cache_ttl',
                 600
             ),
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.weather.state_ttl',
                 300
             ),
-            maxAttempts: (int) $config->get(
+            maxAttempts: (int) $runtime->get(
                 'modules.weather.rate_limit.max_attempts',
                 30
             ),
-            windowSeconds: (int) $config->get(
+            windowSeconds: (int) $runtime->get(
                 'modules.weather.rate_limit.window_seconds',
                 60
             ),
-            forecastDays: (int) $config->get(
+            forecastDays: (int) $runtime->get(
                 'modules.weather.forecast_days',
                 4
             )
@@ -250,7 +256,7 @@ try {
     }
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.currency.enabled',
             true
         )
@@ -269,19 +275,19 @@ try {
             states: $conversationStates,
             logFile: (string) $config->get('paths.logs')
                 . '/currency.log',
-            rateCacheTtl: (int) $config->get(
+            rateCacheTtl: (int) $runtime->get(
                 'modules.currency.rate_cache_ttl',
                 3600
             ),
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.currency.state_ttl',
                 300
             ),
-            maxAttempts: (int) $config->get(
+            maxAttempts: (int) $runtime->get(
                 'modules.currency.rate_limit.max_attempts',
                 30
             ),
-            windowSeconds: (int) $config->get(
+            windowSeconds: (int) $runtime->get(
                 'modules.currency.rate_limit.window_seconds',
                 60
             )
@@ -291,7 +297,7 @@ try {
     }
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.countries.enabled',
             true
         )
@@ -310,19 +316,19 @@ try {
             states: $conversationStates,
             logFile: (string) $config->get('paths.logs')
                 . '/countries.log',
-            cacheTtl: (int) $config->get(
+            cacheTtl: (int) $runtime->get(
                 'modules.countries.cache_ttl',
                 86400
             ),
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.countries.state_ttl',
                 300
             ),
-            maxAttempts: (int) $config->get(
+            maxAttempts: (int) $runtime->get(
                 'modules.countries.rate_limit.max_attempts',
                 30
             ),
-            windowSeconds: (int) $config->get(
+            windowSeconds: (int) $runtime->get(
                 'modules.countries.rate_limit.window_seconds',
                 60
             )
@@ -333,7 +339,7 @@ try {
 
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.calculator.enabled',
             true
         )
@@ -345,23 +351,23 @@ try {
             states: $conversationStates,
             logFile: (string) $config->get('paths.logs')
                 . '/calculator.log',
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.calculator.state_ttl',
                 300
             ),
-            maxAttempts: (int) $config->get(
+            maxAttempts: (int) $runtime->get(
                 'modules.calculator.rate_limit.max_attempts',
                 60
             ),
-            windowSeconds: (int) $config->get(
+            windowSeconds: (int) $runtime->get(
                 'modules.calculator.rate_limit.window_seconds',
                 60
             ),
-            maxExpressionLength: (int) $config->get(
+            maxExpressionLength: (int) $runtime->get(
                 'modules.calculator.max_expression_length',
                 500
             ),
-            maxConversionLength: (int) $config->get(
+            maxConversionLength: (int) $runtime->get(
                 'modules.calculator.max_conversion_length',
                 200
             )
@@ -371,7 +377,7 @@ try {
     }
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.utilities.enabled',
             true
         )
@@ -382,30 +388,30 @@ try {
             preferences: $userPreferences,
             logFile: (string) $config->get('paths.logs')
                 . '/utilities.log',
-            defaultTimezone: (string) $config->get(
+            defaultTimezone: (string) $runtime->get(
                 'modules.settings.default_timezone',
                 (string) $config->get(
                     'app.timezone',
                     'Asia/Tehran'
                 )
             ),
-            defaultPasswordLength: (int) $config->get(
+            defaultPasswordLength: (int) $runtime->get(
                 'modules.utilities.default_password_length',
                 20
             ),
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.utilities.state_ttl',
                 300
             ),
-            maxAttempts: (int) $config->get(
+            maxAttempts: (int) $runtime->get(
                 'modules.utilities.rate_limit.max_attempts',
                 60
             ),
-            windowSeconds: (int) $config->get(
+            windowSeconds: (int) $runtime->get(
                 'modules.utilities.rate_limit.window_seconds',
                 60
             ),
-            maxInputLength: (int) $config->get(
+            maxInputLength: (int) $runtime->get(
                 'modules.utilities.max_input_length',
                 2500
             )
@@ -416,7 +422,7 @@ try {
 
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.settings.enabled',
             true
         )
@@ -426,18 +432,18 @@ try {
             states: $conversationStates,
             logFile: (string) $config->get('paths.logs')
                 . '/settings.log',
-            defaultTimezone: (string) $config->get(
+            defaultTimezone: (string) $runtime->get(
                 'modules.settings.default_timezone',
                 (string) $config->get(
                     'app.timezone',
                     'Asia/Tehran'
                 )
             ),
-            defaultPasswordLength: (int) $config->get(
+            defaultPasswordLength: (int) $runtime->get(
                 'modules.settings.default_password_length',
                 20
             ),
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.settings.state_ttl',
                 300
             )
@@ -448,7 +454,7 @@ try {
 
 
     if (
-        (bool) $config->get(
+        (bool) $runtime->get(
             'modules.admin.enabled',
             true
         )
@@ -466,15 +472,15 @@ try {
             ),
             logFile: (string) $config->get('paths.logs')
                 . '/admin.log',
-            stateTtl: (int) $config->get(
+            stateTtl: (int) $runtime->get(
                 'modules.admin.state_ttl',
                 600
             ),
-            broadcastBatchSize: (int) $config->get(
+            broadcastBatchSize: (int) $runtime->get(
                 'modules.admin.broadcast_batch_size',
                 5
             ),
-            maxBroadcastLength: (int) $config->get(
+            maxBroadcastLength: (int) $runtime->get(
                 'modules.admin.max_broadcast_length',
                 3000
             )

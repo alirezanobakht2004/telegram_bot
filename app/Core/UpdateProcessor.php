@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SmartToolbox\Core;
 
 use PDO;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -22,7 +23,8 @@ final class UpdateProcessor
      */
     public function process(array $update): void
     {
-        $updateId = $update['update_id'] ?? null;
+        $updateId = $update['update_id']
+            ?? null;
 
         if (!is_int($updateId)) {
             throw new RuntimeException(
@@ -30,17 +32,26 @@ final class UpdateProcessor
             );
         }
 
-        $updateType = $this->detectUpdateType($update);
+        $updateType =
+            $this->detectUpdateType($update);
 
-        if (!$this->claimUpdate($updateId, $updateType)) {
+        if (
+            !$this->claimUpdate(
+                $updateId,
+                $updateType
+            )
+        ) {
             return;
         }
 
         try {
-            $message = $update['message'] ?? null;
+            $message = $update['message']
+                ?? null;
 
             if (!is_array($message)) {
-                $this->markCompleted($updateId);
+                $this->markCompleted(
+                    $updateId
+                );
 
                 return;
             }
@@ -63,17 +74,37 @@ final class UpdateProcessor
                 );
             }
 
-            $text = $message['text'] ?? null;
+            if (
+                $this->isBlocked(
+                    $chat,
+                    is_array($user)
+                        ? $user
+                        : null
+                )
+            ) {
+                $this->markCompleted(
+                    $updateId
+                );
+
+                return;
+            }
+
+            $text = $message['text']
+                ?? null;
 
             if (is_string($text)) {
                 $this->handleTextMessage(
                     $chat,
-                    is_array($user) ? $user : null,
+                    is_array($user)
+                        ? $user
+                        : null,
                     trim($text)
                 );
             }
 
-            $this->markCompleted($updateId);
+            $this->markCompleted(
+                $updateId
+            );
         } catch (Throwable $exception) {
             $this->markFailed(
                 $updateId,
@@ -89,74 +120,85 @@ final class UpdateProcessor
         string $updateType
     ): bool {
         $statement = $this->pdo->prepare(
-            'INSERT OR IGNORE INTO processed_updates (
-                update_id,
-                update_type,
-                status,
-                attempts,
-                received_at
-            ) VALUES (
-                :update_id,
-                :update_type,
-                :status,
-                1,
-                :received_at
-            )'
+            'INSERT OR IGNORE INTO
+                processed_updates (
+                    update_id,
+                    update_type,
+                    status,
+                    attempts,
+                    received_at
+                )
+             VALUES (
+                    :update_id,
+                    :update_type,
+                    :status,
+                    1,
+                    :received_at
+             )'
         );
 
         $statement->execute([
             'update_id' => $updateId,
             'update_type' => $updateType,
             'status' => 'processing',
-            'received_at' => date(DATE_ATOM),
+            'received_at' => date(
+                DATE_ATOM
+            ),
         ]);
 
         if ($statement->rowCount() === 1) {
             return true;
         }
 
-        $statusStatement = $this->pdo->prepare(
-            'SELECT status
-             FROM processed_updates
-             WHERE update_id = :update_id'
-        );
+        $statusStatement =
+            $this->pdo->prepare(
+                'SELECT status
+                 FROM processed_updates
+                 WHERE update_id =
+                    :update_id'
+            );
 
         $statusStatement->execute([
             'update_id' => $updateId,
         ]);
 
-        $status = $statusStatement->fetchColumn();
-
-        if ($status !== 'failed') {
+        if (
+            $statusStatement->fetchColumn()
+            !== 'failed'
+        ) {
             return false;
         }
 
-        $retryStatement = $this->pdo->prepare(
+        $retry = $this->pdo->prepare(
             'UPDATE processed_updates
-             SET status = :status,
-                 attempts = attempts + 1,
-                 error_message = NULL,
-                 received_at = :received_at,
-                 processed_at = NULL
+             SET
+                status = :status,
+                attempts = attempts + 1,
+                error_message = NULL,
+                received_at = :received_at,
+                processed_at = NULL
              WHERE update_id = :update_id
                AND status = :failed_status'
         );
 
-        $retryStatement->execute([
+        $retry->execute([
             'status' => 'processing',
-            'received_at' => date(DATE_ATOM),
+            'received_at' => date(
+                DATE_ATOM
+            ),
             'update_id' => $updateId,
             'failed_status' => 'failed',
         ]);
 
-        return $retryStatement->rowCount() === 1;
+        return $retry->rowCount() === 1;
     }
 
     /**
      * @param array<string, mixed> $update
      */
-    private function detectUpdateType(array $update): string
-    {
+    private function detectUpdateType(
+        array $update
+    ): string {
         foreach ($update as $key => $value) {
             if ($key !== 'update_id') {
                 return (string) $key;
@@ -205,39 +247,68 @@ final class UpdateProcessor
                 :last_chat_id,
                 1
             )
-            ON CONFLICT(telegram_id) DO UPDATE SET
+            ON CONFLICT(telegram_id)
+            DO UPDATE SET
                 is_bot = excluded.is_bot,
-                first_name = excluded.first_name,
-                last_name = excluded.last_name,
-                username = excluded.username,
-                language_code = excluded.language_code,
-                is_premium = excluded.is_premium,
-                last_seen_at = excluded.last_seen_at,
-                last_chat_id = excluded.last_chat_id,
-                request_count = users.request_count + 1'
+                first_name =
+                    excluded.first_name,
+                last_name =
+                    excluded.last_name,
+                username =
+                    excluded.username,
+                language_code =
+                    excluded.language_code,
+                is_premium =
+                    excluded.is_premium,
+                last_seen_at =
+                    excluded.last_seen_at,
+                last_chat_id =
+                    excluded.last_chat_id,
+                request_count =
+                    users.request_count + 1'
         );
 
         $now = date(DATE_ATOM);
 
         $statement->execute([
             'telegram_id' => $telegramId,
-            'is_bot' => ($user['is_bot'] ?? false) ? 1 : 0,
-            'first_name' => (string) ($user['first_name'] ?? ''),
-            'last_name' => isset($user['last_name'])
+            'is_bot' =>
+                ($user['is_bot'] ?? false)
+                    ? 1
+                    : 0,
+            'first_name' => (string) (
+                $user['first_name'] ?? ''
+            ),
+            'last_name' => isset(
+                $user['last_name']
+            )
                 ? (string) $user['last_name']
                 : null,
-            'username' => isset($user['username'])
+            'username' => isset(
+                $user['username']
+            )
                 ? (string) $user['username']
                 : null,
-            'language_code' => isset($user['language_code'])
-                ? (string) $user['language_code']
-                : null,
-            'is_premium' => array_key_exists(
-                'is_premium',
-                $user
+            'language_code' => isset(
+                $user['language_code']
             )
-                ? (($user['is_premium'] ?? false) ? 1 : 0)
+                ? (string) $user[
+                    'language_code'
+                ]
                 : null,
+            'is_premium' =>
+                array_key_exists(
+                    'is_premium',
+                    $user
+                )
+                    ? (
+                        ($user[
+                            'is_premium'
+                        ] ?? false)
+                            ? 1
+                            : 0
+                    )
+                    : null,
             'first_seen_at' => $now,
             'last_seen_at' => $now,
             'last_chat_id' => $chatId,
@@ -247,8 +318,9 @@ final class UpdateProcessor
     /**
      * @param array<string, mixed> $chat
      */
-    private function saveChat(array $chat): void
-    {
+    private function saveChat(
+        array $chat
+    ): void {
         $telegramId = $chat['id'] ?? null;
 
         if (!is_int($telegramId)) {
@@ -281,14 +353,19 @@ final class UpdateProcessor
                 1,
                 1
             )
-            ON CONFLICT(telegram_id) DO UPDATE SET
+            ON CONFLICT(telegram_id)
+            DO UPDATE SET
                 type = excluded.type,
                 title = excluded.title,
                 username = excluded.username,
-                first_name = excluded.first_name,
-                last_name = excluded.last_name,
-                last_seen_at = excluded.last_seen_at,
-                request_count = chats.request_count + 1,
+                first_name =
+                    excluded.first_name,
+                last_name =
+                    excluded.last_name,
+                last_seen_at =
+                    excluded.last_seen_at,
+                request_count =
+                    chats.request_count + 1,
                 is_active = 1'
         );
 
@@ -296,18 +373,30 @@ final class UpdateProcessor
 
         $statement->execute([
             'telegram_id' => $telegramId,
-            'type' => (string) ($chat['type'] ?? 'unknown'),
+            'type' => (string) (
+                $chat['type'] ?? 'unknown'
+            ),
             'title' => isset($chat['title'])
                 ? (string) $chat['title']
                 : null,
-            'username' => isset($chat['username'])
+            'username' => isset(
+                $chat['username']
+            )
                 ? (string) $chat['username']
                 : null,
-            'first_name' => isset($chat['first_name'])
-                ? (string) $chat['first_name']
+            'first_name' => isset(
+                $chat['first_name']
+            )
+                ? (string) $chat[
+                    'first_name'
+                ]
                 : null,
-            'last_name' => isset($chat['last_name'])
-                ? (string) $chat['last_name']
+            'last_name' => isset(
+                $chat['last_name']
+            )
+                ? (string) $chat[
+                    'last_name'
+                ]
                 : null,
             'first_seen_at' => $now,
             'last_seen_at' => $now,
@@ -315,7 +404,73 @@ final class UpdateProcessor
     }
 
     /**
-     * @param array<string, mixed>      $chat
+     * @param array<string, mixed> $chat
+     * @param array<string, mixed>|null $user
+     */
+    private function isBlocked(
+        array $chat,
+        ?array $user
+    ): bool {
+        if (
+            is_array($user)
+            && is_int($user['id'] ?? null)
+        ) {
+            $statement =
+                $this->pdo->prepare(
+                    'SELECT is_blocked
+                     FROM users
+                     WHERE telegram_id =
+                        :telegram_id
+                     LIMIT 1'
+                );
+
+            $statement->execute([
+                'telegram_id' =>
+                    $user['id'],
+            ]);
+
+            if (
+                (int)
+                $statement->fetchColumn()
+                === 1
+            ) {
+                return true;
+            }
+        }
+
+        $chatId = $chat['id'] ?? null;
+
+        if (!is_int($chatId)) {
+            return false;
+        }
+
+        try {
+            $statement = $this->pdo->prepare(
+                'SELECT admin_blocked
+                 FROM chats
+                 WHERE telegram_id =
+                    :telegram_id
+                 LIMIT 1'
+            );
+
+            $statement->execute([
+                'telegram_id' => $chatId,
+            ]);
+
+            return (int)
+                $statement->fetchColumn()
+                === 1;
+        } catch (PDOException) {
+            /*
+             * قبل از اجرای Migration 006 ستون هنوز وجود ندارد.
+             * در این بازه کوتاه، پردازش عادی ادامه پیدا می‌کند.
+             */
+            return false;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $chat
      * @param array<string, mixed>|null $user
      */
     private function handleTextMessage(
@@ -340,10 +495,15 @@ final class UpdateProcessor
 
         $context = new MessageContext(
             chatId: $chatId,
-            chatType: (string) ($chat['type'] ?? 'unknown'),
+            chatType: (string) (
+                $chat['type'] ?? 'unknown'
+            ),
             userId: $userId,
             firstName: is_array($user)
-                ? (string) ($user['first_name'] ?? '')
+                ? (string) (
+                    $user['first_name']
+                    ?? ''
+                )
                 : '',
             text: $text,
             telegram: $this->telegram
@@ -352,19 +512,24 @@ final class UpdateProcessor
         $this->router->dispatch($context);
     }
 
-    private function markCompleted(int $updateId): void
-    {
+    private function markCompleted(
+        int $updateId
+    ): void {
         $statement = $this->pdo->prepare(
             'UPDATE processed_updates
-             SET status = :status,
-                 processed_at = :processed_at,
-                 error_message = NULL
+             SET
+                status = :status,
+                processed_at =
+                    :processed_at,
+                error_message = NULL
              WHERE update_id = :update_id'
         );
 
         $statement->execute([
             'status' => 'completed',
-            'processed_at' => date(DATE_ATOM),
+            'processed_at' => date(
+                DATE_ATOM
+            ),
             'update_id' => $updateId,
         ]);
     }
@@ -375,15 +540,20 @@ final class UpdateProcessor
     ): void {
         $statement = $this->pdo->prepare(
             'UPDATE processed_updates
-             SET status = :status,
-                 processed_at = :processed_at,
-                 error_message = :error_message
+             SET
+                status = :status,
+                processed_at =
+                    :processed_at,
+                error_message =
+                    :error_message
              WHERE update_id = :update_id'
         );
 
         $statement->execute([
             'status' => 'failed',
-            'processed_at' => date(DATE_ATOM),
+            'processed_at' => date(
+                DATE_ATOM
+            ),
             'error_message' => mb_substr(
                 $errorMessage,
                 0,

@@ -177,6 +177,22 @@ return [
         ],
     ],
 
+    /*
+     * رمز پنل وب نباید در Git ذخیره شود.
+     * مقدار password_hash را فقط در config/local.php قرار بده.
+     */
+    'web_admin' => [
+        'enabled' => true,
+        'base_path' => '/admin',
+        'password_hash' => '',
+        'session_name' => 'smart_toolbox_admin',
+        'session_idle_seconds' => 3600,
+        'session_absolute_seconds' => 43200,
+        'login_max_attempts' => 5,
+        'login_window_seconds' => 900,
+        'login_block_seconds' => 900,
+    ],
+
     'admins' => [
         47729048,
     ],
