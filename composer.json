@@ -1,0 +1,28 @@
+{
+    "name": "alirezanobakht2004/telegram-bot",
+    "description": "Modular Telegram toolbox bot",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": "^8.4",
+        "ext-curl": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-pdo": "*",
+        "ext-pdo_sqlite": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "SmartToolbox\\": "app/"
+        }
+    },
+    "scripts": {
+        "check": "php scripts/check.php"
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": true,
+        "preferred-install": "dist"
+    }
+}
