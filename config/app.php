@@ -118,6 +118,33 @@ return [
         ],
 
 
+
+        /*
+         * یادآورها در SQLite ذخیره می‌شوند و Worker زمان‌بندی‌شده
+         * آن‌ها را از طریق Telegram Bot API ارسال می‌کند.
+         * این قابلیت API Key یا سرویس پولی جدیدی ندارد.
+         */
+        'reminders' => [
+            'enabled' => true,
+            'state_ttl' => 300,
+            'max_text_length' => 1000,
+            'max_pending_per_user' => 50,
+            'max_future_days' => 365,
+            'retention_days' => 90,
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+
+            'worker' => [
+                'batch_size' => 10,
+                'max_delivery_attempts' => 3,
+                'retry_base_seconds' => 60,
+                'stale_lock_seconds' => 600,
+            ],
+        ],
+
         /*
          * ماشین حساب و تبدیل واحد بدون API خارجی اجرا می‌شوند.
          * هیچ عبارت PHP یا eval اجرا نمی‌شود؛ Parser اختصاصی و

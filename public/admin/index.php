@@ -642,6 +642,57 @@ if (
                 );
                 break;
 
+            case 'process_reminders':
+                $result =
+                    $service->processDueReminders(
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    'Worker اجرا شد: '
+                    . $result['sent']
+                    . ' ارسال، '
+                    . $result['failed']
+                    . ' ناموفق، '
+                    . $result['retried']
+                    . ' Retry.'
+                );
+                break;
+
+            case 'cancel_reminder':
+                $service->cancelReminder(
+                    (int) (
+                        $_POST['reminder_id']
+                        ?? 0
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'یادآور لغو شد.'
+                );
+                break;
+
+            case 'retry_reminder':
+                $service->retryReminder(
+                    (int) (
+                        $_POST['reminder_id']
+                        ?? 0
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'یادآور دوباره وارد صف شد.'
+                );
+                break;
+
             case 'clear_log':
                 $service->clearLog(
                     (string) (
@@ -763,6 +814,7 @@ $sections = [
     'users',
     'chats',
     'broadcasts',
+    'reminders',
     'logs',
     'system',
     'audit',
@@ -784,6 +836,7 @@ if (
 
 $csrf = $auth->csrfToken();
 $flashMessage = $consumeFlash();
+$stats = $service->dashboard();
 
 $navigation = [
     'dashboard' => ['📊', 'داشبورد'],
@@ -792,6 +845,7 @@ $navigation = [
     'users' => ['👥', 'کاربران'],
     'chats' => ['💬', 'چت‌ها'],
     'broadcasts' => ['📣', 'ارسال همگانی'],
+    'reminders' => ['⏰', 'یادآورها'],
     'logs' => ['🧾', 'لاگ‌ها'],
     'system' => ['🩺', 'سیستم'],
     'audit' => ['🔎', 'Audit'],
@@ -911,6 +965,7 @@ $navigation = [
                 ['⚠️', 'Update ناموفق', $stats['updates_failed']],
                 ['💬', 'چت فعال', $stats['chats_active']],
                 ['📣', 'Broadcast فعال', $stats['broadcasts_active']],
+                ['⏰', 'یادآور فعال', $stats['reminders_pending']],
                 ['⚙️', 'Override فعال', $stats['runtime_overrides']],
                 ['🗃', 'فایل کش', $stats['cache_files']],
                 ['💾', 'حجم دیتابیس', $bytes($stats['database_bytes'])],
@@ -1878,6 +1933,424 @@ $navigation = [
                         <?php endforeach; ?>
                         </tbody>
                     </table>
+                </div>
+            </section>
+
+
+        <?php elseif ($section === 'reminders'): ?>
+            <?php
+            $status = (string) (
+                $_GET['status'] ?? 'all'
+            );
+
+            $page = max(
+                1,
+                (int) (
+                    $_GET['page'] ?? 1
+                )
+            );
+
+            $statusLabels = [
+                'all' => 'همه',
+                'pending' => 'در صف',
+                'processing' => 'در حال پردازش',
+                'sent' => 'ارسال‌شده',
+                'failed' => 'ناموفق',
+                'cancelled' => 'لغوشده',
+            ];
+
+            if (
+                !array_key_exists(
+                    $status,
+                    $statusLabels
+                )
+            ) {
+                $status = 'all';
+            }
+
+            $reminders = $service->reminders(
+                $status,
+                $page
+            );
+
+            $lastRun =
+                $service->lastReminderWorkerRun();
+            ?>
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>مدیریت یادآورها</h2>
+                        <p>
+                            صف ارسال، تاریخچه، Retry و اجرای دستی Worker
+                        </p>
+                    </div>
+
+                    <form
+                        method="post"
+                        action="<?= $h($basePath) ?>/"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= $h($csrf) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="process_reminders"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_section"
+                            value="reminders"
+                        >
+                        <button
+                            class="button primary"
+                            type="submit"
+                        >
+                            اجرای Worker الان
+                        </button>
+                    </form>
+                </div>
+
+                <?php if ($lastRun !== null): ?>
+                    <div class="notice">
+                        آخرین اجرا:
+                        <?= $h($lastRun['started_at']) ?>
+                        · وضعیت:
+                        <?= $h($lastRun['status']) ?>
+                        · دریافت:
+                        <?= $number((int) $lastRun['claimed_count']) ?>
+                        · ارسال:
+                        <?= $number((int) $lastRun['sent_count']) ?>
+                        · ناموفق:
+                        <?= $number((int) $lastRun['failed_count']) ?>
+                        · Retry:
+                        <?= $number((int) $lastRun['retried_count']) ?>
+                    </div>
+                <?php else: ?>
+                    <div class="notice">
+                        Worker هنوز اجرا نشده است.
+                    </div>
+                <?php endif; ?>
+            </section>
+
+            <section class="metrics">
+                <article class="metric-card">
+                    <span class="metric-icon">⏳</span>
+                    <div>
+                        <small>در صف</small>
+                        <strong>
+                            <?= $number($stats['reminders_pending']) ?>
+                        </strong>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-icon">🔔</span>
+                    <div>
+                        <small>سررسیدشده</small>
+                        <strong>
+                            <?= $number($stats['reminders_due']) ?>
+                        </strong>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-icon">✅</span>
+                    <div>
+                        <small>ارسال‌شده</small>
+                        <strong>
+                            <?= $number($stats['reminders_sent']) ?>
+                        </strong>
+                    </div>
+                </article>
+
+                <article class="metric-card">
+                    <span class="metric-icon">⚠️</span>
+                    <div>
+                        <small>ناموفق</small>
+                        <strong>
+                            <?= $number($stats['reminders_failed']) ?>
+                        </strong>
+                    </div>
+                </article>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>فهرست یادآورها</h2>
+                        <p>
+                            <?= $number($reminders['total']) ?>
+                            رکورد
+                        </p>
+                    </div>
+
+                    <form
+                        method="get"
+                        action="<?= $h($basePath) ?>/"
+                        class="search-form"
+                    >
+                        <input
+                            type="hidden"
+                            name="section"
+                            value="reminders"
+                        >
+                        <select name="status">
+                            <?php foreach (
+                                $statusLabels
+                                as $statusKey =>
+                                    $statusLabel
+                            ): ?>
+                                <option
+                                    value="<?= $h($statusKey) ?>"
+                                    <?= $status === $statusKey ? 'selected' : '' ?>
+                                >
+                                    <?= $h($statusLabel) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+
+                        <button
+                            class="button primary"
+                            type="submit"
+                        >
+                            فیلتر
+                        </button>
+                    </form>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>کاربر / چت</th>
+                            <th>متن</th>
+                            <th>زمان</th>
+                            <th>وضعیت</th>
+                            <th>تلاش</th>
+                            <th>خطا</th>
+                            <th>عملیات</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $reminders['rows']
+                            as $reminder
+                        ): ?>
+                            <?php
+                            $displayName = trim(
+                                (string) (
+                                    $reminder[
+                                        'first_name'
+                                    ] ?? ''
+                                )
+                                . ' '
+                                . (string) (
+                                    $reminder[
+                                        'last_name'
+                                    ] ?? ''
+                                )
+                            );
+
+                            if ($displayName === '') {
+                                $displayName =
+                                    'بدون نام';
+                            }
+
+                            try {
+                                $localDate = (
+                                    new DateTimeImmutable(
+                                        '@'
+                                        . (int) $reminder[
+                                            'scheduled_at'
+                                        ]
+                                    )
+                                )->setTimezone(
+                                    new DateTimeZone(
+                                        (string) $reminder[
+                                            'timezone'
+                                        ]
+                                    )
+                                )->format(
+                                    'Y-m-d H:i'
+                                );
+                            } catch (Throwable) {
+                                $localDate = date(
+                                    'Y-m-d H:i',
+                                    (int) $reminder[
+                                        'scheduled_at'
+                                    ]
+                                );
+                            }
+                            ?>
+                            <tr>
+                                <td>
+                                    <code>
+                                        #<?= $h($reminder['id']) ?>
+                                    </code>
+                                </td>
+                                <td>
+                                    <strong>
+                                        <?= $h($displayName) ?>
+                                    </strong>
+                                    <small>
+                                        User:
+                                        <?= $h($reminder['user_id']) ?>
+                                        · Chat:
+                                        <?= $h($reminder['chat_id']) ?>
+                                    </small>
+                                </td>
+                                <td>
+                                    <?= nl2br(
+                                        $h(
+                                            mb_substr(
+                                                (string) $reminder[
+                                                    'reminder_text'
+                                                ],
+                                                0,
+                                                220
+                                            )
+                                        )
+                                    ) ?>
+                                </td>
+                                <td>
+                                    <?= $h($localDate) ?>
+                                    <small>
+                                        <?= $h($reminder['timezone']) ?>
+                                    </small>
+                                </td>
+                                <td>
+                                    <span class="badge neutral">
+                                        <?= $h(
+                                            $statusLabels[
+                                                $reminder['status']
+                                            ] ?? $reminder['status']
+                                        ) ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?= $number(
+                                        (int) $reminder['attempts']
+                                    ) ?>
+                                </td>
+                                <td>
+                                    <small>
+                                        <?= $h(
+                                            mb_substr(
+                                                (string) (
+                                                    $reminder[
+                                                        'last_error'
+                                                    ] ?? ''
+                                                ),
+                                                0,
+                                                180
+                                            )
+                                        ) ?>
+                                    </small>
+                                </td>
+                                <td class="actions">
+                                    <?php if (
+                                        in_array(
+                                            $reminder['status'],
+                                            [
+                                                'pending',
+                                                'failed',
+                                            ],
+                                            true
+                                        )
+                                    ): ?>
+                                        <form
+                                            method="post"
+                                            action="<?= $h($basePath) ?>/"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="csrf"
+                                                value="<?= $h($csrf) ?>"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="action"
+                                                value="cancel_reminder"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="return_section"
+                                                value="reminders"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="reminder_id"
+                                                value="<?= $h($reminder['id']) ?>"
+                                            >
+                                            <button
+                                                class="button small danger"
+                                                type="submit"
+                                            >
+                                                لغو
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+
+                                    <?php if (
+                                        $reminder['status']
+                                        === 'failed'
+                                    ): ?>
+                                        <form
+                                            method="post"
+                                            action="<?= $h($basePath) ?>/"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="csrf"
+                                                value="<?= $h($csrf) ?>"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="action"
+                                                value="retry_reminder"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="return_section"
+                                                value="reminders"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="reminder_id"
+                                                value="<?= $h($reminder['id']) ?>"
+                                            >
+                                            <button
+                                                class="button small secondary"
+                                                type="submit"
+                                            >
+                                                Retry
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <?php for (
+                        $index = 1;
+                        $index <= $reminders['pages'];
+                        $index++
+                    ): ?>
+                        <a
+                            class="<?= $index === $reminders['page'] ? 'active' : '' ?>"
+                            href="<?= $h($basePath) ?>/?section=reminders&amp;status=<?= rawurlencode($status) ?>&amp;page=<?= $index ?>"
+                        >
+                            <?= $index ?>
+                        </a>
+                    <?php endfor; ?>
                 </div>
             </section>
 

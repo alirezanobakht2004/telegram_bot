@@ -10,6 +10,7 @@ use RuntimeException;
 use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\RuntimeSettings;
 use SmartToolbox\Core\TelegramClient;
+use SmartToolbox\Modules\Reminders\ReminderWorker;
 use Throwable;
 
 final class AdminPanelService
@@ -133,6 +134,32 @@ final class AdminPanelService
                  FROM rate_limits
                  WHERE expires_at > :now',
                 ['now' => time()]
+            ),
+            'reminders_pending' => $this->count(
+                "SELECT COUNT(*)
+                 FROM reminders
+                 WHERE status IN (
+                    'pending',
+                    'processing'
+                 )"
+            ),
+            'reminders_due' => $this->count(
+                "SELECT COUNT(*)
+                 FROM reminders
+                 WHERE status = 'pending'
+                   AND scheduled_at <= :now
+                   AND next_attempt_at <= :now",
+                ['now' => time()]
+            ),
+            'reminders_sent' => $this->count(
+                "SELECT COUNT(*)
+                 FROM reminders
+                 WHERE status = 'sent'"
+            ),
+            'reminders_failed' => $this->count(
+                "SELECT COUNT(*)
+                 FROM reminders
+                 WHERE status = 'failed'"
             ),
             'runtime_overrides' => count(
                 $this->runtime->allOverrides()
@@ -627,6 +654,331 @@ final class AdminPanelService
                 ? 'chat.block'
                 : 'chat.unblock',
             (string) $telegramId,
+            [],
+            $ip,
+            $userAgent
+        );
+    }
+
+
+    /**
+     * @return array{
+     *     rows: list<array<string, mixed>>,
+     *     total: int,
+     *     page: int,
+     *     pages: int
+     * }
+     */
+    public function reminders(
+        string $status,
+        int $page,
+        int $perPage = 30
+    ): array {
+        $allowedStatuses = [
+            'all',
+            'pending',
+            'processing',
+            'sent',
+            'failed',
+            'cancelled',
+        ];
+
+        if (
+            !in_array(
+                $status,
+                $allowedStatuses,
+                true
+            )
+        ) {
+            $status = 'all';
+        }
+
+        $page = max(1, $page);
+        $perPage = max(
+            10,
+            min(100, $perPage)
+        );
+
+        $offset = ($page - 1) * $perPage;
+        $where = '';
+        $parameters = [];
+
+        if ($status !== 'all') {
+            $where =
+                'WHERE r.status = :status';
+
+            $parameters['status'] =
+                $status;
+        }
+
+        $countStatement =
+            $this->pdo->prepare(
+                "SELECT COUNT(*)
+                 FROM reminders AS r
+                 {$where}"
+            );
+
+        $countStatement->execute(
+            $parameters
+        );
+
+        $total = (int)
+            $countStatement->fetchColumn();
+
+        $statement = $this->pdo->prepare(
+            "SELECT
+                r.id,
+                r.user_id,
+                r.chat_id,
+                r.reminder_text,
+                r.timezone,
+                r.scheduled_at,
+                r.next_attempt_at,
+                r.status,
+                r.attempts,
+                r.last_error,
+                r.created_at,
+                r.updated_at,
+                r.sent_at,
+                r.cancelled_at,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM reminders AS r
+             LEFT JOIN users AS u
+                ON u.telegram_id = r.user_id
+             {$where}
+             ORDER BY r.id DESC
+             LIMIT :limit
+             OFFSET :offset"
+        );
+
+        foreach (
+            $parameters
+            as $key => $value
+        ) {
+            $statement->bindValue(
+                ':' . $key,
+                $value,
+                PDO::PARAM_STR
+            );
+        }
+
+        $statement->bindValue(
+            ':limit',
+            $perPage,
+            PDO::PARAM_INT
+        );
+
+        $statement->bindValue(
+            ':offset',
+            $offset,
+            PDO::PARAM_INT
+        );
+
+        $statement->execute();
+
+        $rows = $statement->fetchAll(
+            PDO::FETCH_ASSOC
+        );
+
+        return [
+            'rows' => is_array($rows)
+                ? $rows
+                : [],
+            'total' => $total,
+            'page' => $page,
+            'pages' => max(
+                1,
+                (int) ceil(
+                    $total / $perPage
+                )
+            ),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function lastReminderWorkerRun(): ?array
+    {
+        $statement = $this->pdo->query(
+            'SELECT
+                id,
+                status,
+                claimed_count,
+                sent_count,
+                failed_count,
+                retried_count,
+                pruned_count,
+                started_at,
+                completed_at,
+                error_message
+             FROM reminder_worker_runs
+             ORDER BY id DESC
+             LIMIT 1'
+        );
+
+        $row = $statement->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        return is_array($row)
+            ? $row
+            : null;
+    }
+
+    /**
+     * @return array{
+     *     claimed: int,
+     *     sent: int,
+     *     failed: int,
+     *     retried: int,
+     *     pruned: int
+     * }
+     */
+    public function processDueReminders(
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): array {
+        $worker = new ReminderWorker(
+            pdo: $this->pdo,
+            sender: function (
+                int|string $chatId,
+                string $text
+            ): void {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    $text
+                );
+            },
+            logFile: rtrim(
+                $this->logsDirectory,
+                '/\\'
+            ) . '/reminders.log'
+        );
+
+        $result = $worker->run(
+            batchSize: (int) $this->runtime->get(
+                'modules.reminders.worker.batch_size',
+                10
+            ),
+            maxDeliveryAttempts: (int) $this->runtime->get(
+                'modules.reminders.worker.max_delivery_attempts',
+                3
+            ),
+            retryBaseSeconds: (int) $this->runtime->get(
+                'modules.reminders.worker.retry_base_seconds',
+                60
+            ),
+            staleLockSeconds: (int) $this->runtime->get(
+                'modules.reminders.worker.stale_lock_seconds',
+                600
+            ),
+            retentionDays: (int) $this->runtime->get(
+                'modules.reminders.retention_days',
+                90
+            )
+        );
+
+        $this->audit(
+            $identity,
+            'reminder.worker',
+            'due-reminders',
+            $result,
+            $ip,
+            $userAgent
+        );
+
+        return $result;
+    }
+
+    public function cancelReminder(
+        int $reminderId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $statement = $this->pdo->prepare(
+            "UPDATE reminders
+             SET
+                status = 'cancelled',
+                cancelled_at = :cancelled_at,
+                locked_at = NULL,
+                updated_at = :updated_at
+             WHERE id = :id
+               AND status IN (
+                    'pending',
+                    'failed'
+               )"
+        );
+
+        $now = date(DATE_ATOM);
+
+        $statement->execute([
+            'cancelled_at' => $now,
+            'updated_at' => $now,
+            'id' => $reminderId,
+        ]);
+
+        if (
+            $statement->rowCount()
+            === 0
+        ) {
+            throw new RuntimeException(
+                'یادآور قابل لغو پیدا نشد.'
+            );
+        }
+
+        $this->audit(
+            $identity,
+            'reminder.cancel',
+            (string) $reminderId,
+            [],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function retryReminder(
+        int $reminderId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $statement = $this->pdo->prepare(
+            "UPDATE reminders
+             SET
+                status = 'pending',
+                next_attempt_at =
+                    :next_attempt_at,
+                last_error = NULL,
+                locked_at = NULL,
+                updated_at = :updated_at
+             WHERE id = :id
+               AND status = 'failed'"
+        );
+
+        $statement->execute([
+            'next_attempt_at' => time(),
+            'updated_at' => date(DATE_ATOM),
+            'id' => $reminderId,
+        ]);
+
+        if (
+            $statement->rowCount()
+            === 0
+        ) {
+            throw new RuntimeException(
+                'یادآور ناموفق برای Retry پیدا نشد.'
+            );
+        }
+
+        $this->audit(
+            $identity,
+            'reminder.retry',
+            (string) $reminderId,
             [],
             $ip,
             $userAgent

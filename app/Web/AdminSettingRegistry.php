@@ -140,6 +140,76 @@ final class AdminSettingRegistry
                 1000
             ),
             ...$this->module(
+                'reminders',
+                'یادآورها',
+                [
+                    'state_ttl' =>
+                        $this->integer(
+                            'TTL مکالمه مرحله‌ای',
+                            30,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'max_text_length' =>
+                        $this->integer(
+                            'حداکثر طول متن',
+                            50,
+                            3000,
+                            'کاراکتر'
+                        ),
+                    'max_pending_per_user' =>
+                        $this->integer(
+                            'حداکثر یادآور فعال کاربر',
+                            1,
+                            500,
+                            'یادآور'
+                        ),
+                    'max_future_days' =>
+                        $this->integer(
+                            'حداکثر فاصله زمانی',
+                            1,
+                            3650,
+                            'روز'
+                        ),
+                    'retention_days' =>
+                        $this->integer(
+                            'نگهداری تاریخچه',
+                            1,
+                            3650,
+                            'روز'
+                        ),
+                    'worker.batch_size' =>
+                        $this->integer(
+                            'اندازه Batch Worker',
+                            1,
+                            50,
+                            'یادآور در هر اجرا'
+                        ),
+                    'worker.max_delivery_attempts' =>
+                        $this->integer(
+                            'حداکثر تلاش ارسال',
+                            1,
+                            10,
+                            'بار'
+                        ),
+                    'worker.retry_base_seconds' =>
+                        $this->integer(
+                            'پایه تأخیر Retry',
+                            10,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'worker.stale_lock_seconds' =>
+                        $this->integer(
+                            'انقضای Lock پردازش',
+                            60,
+                            3600,
+                            'ثانیه'
+                        ),
+                ],
+                1000
+            ),
+            ...$this->module(
                 'calculator',
                 'ماشین حساب',
                 [

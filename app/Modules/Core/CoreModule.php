@@ -106,6 +106,7 @@ final class CoreModule implements ModuleInterface
             . "🌤 آب‌وهوا و پیش‌بینی چندروزه\n"
             . "🌍 اطلاعات کشورها\n"
             . "💱 نرخ و تبدیل ارزهای رسمی\n"
+            . "⏰ یادآورها و اعلان‌های زمان‌بندی‌شده\n"
             . "🧮 ماشین حساب و تبدیل واحد\n"
             . "🧰 ابزارهای داخلی و رایگان\n"
             . "🐶 تصویر تصادفی سگ\n"
@@ -128,6 +129,10 @@ final class CoreModule implements ModuleInterface
             . "/country Iran — اطلاعات یک کشور\n"
             . "/randomcountry — کشور تصادفی\n"
             . "/currency 100 USD EUR — تبدیل ارز\n"
+            . "/remind 10m خرید شیر — ساخت یادآور\n"
+            . "/reminders — یادآورهای فعال\n"
+            . "/remindercancel 12 — لغو یادآور\n"
+            . "/reminderhistory — تاریخچه یادآورها\n"
             . "/calc 2*(3+4) — محاسبه امن\n"
             . "/convert 10 km mi — تبدیل واحد\n"
             . "/units — فهرست واحدها\n"
@@ -180,15 +185,23 @@ final class CoreModule implements ModuleInterface
                         'text' => '💱 نرخ ارز',
                     ],
                     [
-                        'text' => '🧮 ماشین حساب',
+                        'text' => '⏰ یادآورها',
                     ],
                 ],
                 [
                     [
-                        'text' => '🧰 ابزارها',
+                        'text' => '🧮 ماشین حساب',
                     ],
                     [
+                        'text' => '🧰 ابزارها',
+                    ],
+                ],
+                [
+                    [
                         'text' => '⚙️ تنظیمات',
+                    ],
+                    [
+                        'text' => 'ℹ️ راهنما',
                     ],
                 ],
                 [
@@ -200,11 +213,6 @@ final class CoreModule implements ModuleInterface
                     ],
                     [
                         'text' => '🦊 روباه',
-                    ],
-                ],
-                [
-                    [
-                        'text' => 'ℹ️ راهنما',
                     ],
                 ],
             ],

@@ -22,6 +22,9 @@ use SmartToolbox\Modules\Countries\CountriesDevProvider;
 use SmartToolbox\Modules\Countries\CountriesModule;
 use SmartToolbox\Modules\Currency\CurrencyModule;
 use SmartToolbox\Modules\Currency\FrankfurterProvider;
+use SmartToolbox\Modules\Reminders\ReminderModule;
+use SmartToolbox\Modules\Reminders\ReminderRepository;
+use SmartToolbox\Modules\Reminders\ReminderTimeParser;
 use SmartToolbox\Modules\Utilities\UtilitiesModule;
 use SmartToolbox\Modules\Settings\SettingsModule;
 use SmartToolbox\Modules\Weather\WeatherModule;
@@ -337,6 +340,57 @@ try {
         $countriesModule->register($router);
     }
 
+
+
+    if (
+        (bool) $runtime->get(
+            'modules.reminders.enabled',
+            true
+        )
+    ) {
+        $reminderModule = new ReminderModule(
+            repository: new ReminderRepository($pdo),
+            parser: new ReminderTimeParser(),
+            rateLimiter: $rateLimiter,
+            states: $conversationStates,
+            preferences: $userPreferences,
+            logFile: (string) $config->get('paths.logs')
+                . '/reminders.log',
+            defaultTimezone: (string) $runtime->get(
+                'modules.settings.default_timezone',
+                (string) $config->get(
+                    'app.timezone',
+                    'Asia/Tehran'
+                )
+            ),
+            stateTtl: (int) $runtime->get(
+                'modules.reminders.state_ttl',
+                300
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.reminders.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.reminders.rate_limit.window_seconds',
+                60
+            ),
+            maxTextLength: (int) $runtime->get(
+                'modules.reminders.max_text_length',
+                1000
+            ),
+            maxPendingPerUser: (int) $runtime->get(
+                'modules.reminders.max_pending_per_user',
+                50
+            ),
+            maxFutureDays: (int) $runtime->get(
+                'modules.reminders.max_future_days',
+                365
+            )
+        );
+
+        $reminderModule->register($router);
+    }
 
     if (
         (bool) $runtime->get(
