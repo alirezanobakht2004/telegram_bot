@@ -24,7 +24,7 @@ final class AnimalsModule implements ModuleInterface
         private readonly string $foxEndpoint,
         private readonly string $logFile,
         private readonly int $cacheTtl = 5,
-        private readonly int $maxAttempts = 8,
+        private readonly int $maxAttempts = 30,
         private readonly int $windowSeconds = 60
     ) {
     }
@@ -138,6 +138,7 @@ final class AnimalsModule implements ModuleInterface
                 'dog' => $this->fetchDog(),
                 'cat' => $this->fetchCat(),
                 'fox' => $this->fetchFox(),
+
                 default => throw new RuntimeException(
                     'Unsupported animal provider.'
                 ),
@@ -169,37 +170,63 @@ final class AnimalsModule implements ModuleInterface
             );
         }
 
-        return $this->validateImageUrl($data['message']);
+        return $this->validateImageUrl(
+            $data['message']
+        );
     }
 
     private function fetchCat(): string
     {
-        $separator = str_contains($this->catEndpoint, '?')
+        $separator = str_contains(
+            $this->catEndpoint,
+            '?'
+        )
             ? '&'
             : '?';
 
+        /*
+         * در CATAAS پارامتر type برای اندازه تصویر است،
+         * نه فرمت فایل.
+         *
+         * type=jpg نامعتبر است.
+         * type=medium یک مقدار معتبر است.
+         */
+        $requestUrl = $this->catEndpoint
+            . $separator
+            . 'json=true&type=medium';
+
         $data = $this->http
-            ->get(
-                $this->catEndpoint
-                . $separator
-                . 'json=true&type=jpg'
-            )
+            ->get($requestUrl)
             ->requireSuccess()
             ->jsonArray();
 
         $url = $data['url'] ?? null;
 
-        if (is_string($url) && $url !== '') {
+        if (
+            is_string($url)
+            && trim($url) !== ''
+        ) {
             if (str_starts_with($url, '/')) {
                 $url = 'https://cataas.com' . $url;
             }
 
-            return $this->validateImageUrl($url);
+            return $this->validateImageUrl(
+                $url
+            );
         }
 
-        $id = $data['_id'] ?? $data['id'] ?? null;
+        /*
+         * برای سازگاری با نسخه‌هایی از API که فقط ID
+         * تصویر را برمی‌گردانند.
+         */
+        $id = $data['id']
+            ?? $data['_id']
+            ?? null;
 
-        if (!is_string($id) || trim($id) === '') {
+        if (
+            !is_string($id)
+            || trim($id) === ''
+        ) {
             throw new RuntimeException(
                 'Cat provider returned an unexpected response.'
             );
@@ -207,8 +234,8 @@ final class AnimalsModule implements ModuleInterface
 
         return $this->validateImageUrl(
             'https://cataas.com/cat/'
-            . rawurlencode($id)
-            . '?type=jpg&width=900&height=900'
+            . rawurlencode(trim($id))
+            . '?type=medium&position=center'
         );
     }
 
@@ -219,25 +246,41 @@ final class AnimalsModule implements ModuleInterface
             ->requireSuccess()
             ->jsonArray();
 
-        if (!is_string($data['image'] ?? null)) {
+        $image = $data['image'] ?? null;
+
+        if (!is_string($image)) {
             throw new RuntimeException(
                 'Fox provider returned an unexpected response.'
             );
         }
 
-        return $this->validateImageUrl($data['image']);
+        return $this->validateImageUrl(
+            $image
+        );
     }
 
-    private function validateImageUrl(string $url): string
-    {
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+    private function validateImageUrl(
+        string $url
+    ): string {
+        $url = trim($url);
+
+        if (
+            $url === ''
+            || !filter_var(
+                $url,
+                FILTER_VALIDATE_URL
+            )
+        ) {
             throw new RuntimeException(
                 'Animal provider returned an invalid image URL.'
             );
         }
 
         $scheme = mb_strtolower(
-            (string) parse_url($url, PHP_URL_SCHEME)
+            (string) parse_url(
+                $url,
+                PHP_URL_SCHEME
+            )
         );
 
         if ($scheme !== 'https') {
@@ -253,6 +296,18 @@ final class AnimalsModule implements ModuleInterface
         string $context,
         Throwable $exception
     ): void {
+        $directory = dirname(
+            $this->logFile
+        );
+
+        if (!is_dir($directory)) {
+            @mkdir(
+                $directory,
+                0700,
+                true
+            );
+        }
+
         $entry = sprintf(
             "[%s] [%s] %s\n",
             date(DATE_ATOM),
@@ -267,13 +322,24 @@ final class AnimalsModule implements ModuleInterface
         );
     }
 
-    private function caption(string $animal): string
-    {
+    private function caption(
+        string $animal
+    ): string {
         return match ($animal) {
-            'dog' => "🐶 سگ تصادفی\n\nبرای تصویر بعدی: /dog",
-            'cat' => "🐱 گربه تصادفی\n\nبرای تصویر بعدی: /cat",
-            'fox' => "🦊 روباه تصادفی\n\nبرای تصویر بعدی: /fox",
-            default => 'تصویر تصادفی',
+            'dog' =>
+                "🐶 سگ تصادفی\n\n"
+                . 'برای تصویر بعدی: /dog',
+
+            'cat' =>
+                "🐱 گربه تصادفی\n\n"
+                . 'برای تصویر بعدی: /cat',
+
+            'fox' =>
+                "🦊 روباه تصادفی\n\n"
+                . 'برای تصویر بعدی: /fox',
+
+            default =>
+                'تصویر تصادفی',
         };
     }
 }

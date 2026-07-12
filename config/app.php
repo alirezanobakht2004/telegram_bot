@@ -39,21 +39,36 @@ return [
     'modules' => [
         'animals' => [
             'enabled' => true,
+
+            /*
+             * مدت نگهداری URL تصویر در کش.
+             * مقدار پایین باعث می‌شود تصاویر تصادفی سریع‌تر عوض شوند.
+             */
             'cache_ttl' => 5,
+
+            /*
+             * حداکثر 30 درخواست در 60 ثانیه
+             * برای هر کاربر یا هر چت.
+             */
             'rate_limit' => [
-                'max_attempts' => 8,
+                'max_attempts' => 30,
                 'window_seconds' => 60,
             ],
+
             'providers' => [
                 'dog' => [
                     'endpoint' =>
                         'https://dog.ceo/api/breeds/image/random',
                 ],
+
                 'cat' => [
-                    'endpoint' => 'https://cataas.com/cat',
+                    'endpoint' =>
+                        'https://cataas.com/cat',
                 ],
+
                 'fox' => [
-                    'endpoint' => 'https://randomfox.ca/floof/',
+                    'endpoint' =>
+                        'https://randomfox.ca/floof/',
                 ],
             ],
         ],
