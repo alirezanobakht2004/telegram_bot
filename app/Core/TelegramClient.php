@@ -72,10 +72,13 @@ final class TelegramClient
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 12,
+            CURLOPT_NOSIGNAL => true,
             CURLOPT_HTTPHEADER => [
                 'Accept: application/json',
                 'Content-Type: application/json',
             ],
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
 
         $response = curl_exec($handle);
@@ -115,7 +118,10 @@ final class TelegramClient
             || ($data['ok'] ?? false) !== true
         ) {
             $description = is_array($data)
-                ? (string) ($data['description'] ?? 'Unknown Telegram error')
+                ? (string) (
+                    $data['description']
+                    ?? 'Unknown Telegram error'
+                )
                 : 'Unknown Telegram error';
 
             throw new RuntimeException(
@@ -147,7 +153,7 @@ final class TelegramClient
     }
 
     /**
-     * @param int|string $chatId
+     * @param int|string           $chatId
      * @param array<string, mixed> $options
      *
      * @return array<string, mixed>
@@ -162,11 +168,50 @@ final class TelegramClient
             'text' => $text,
         ] + $options;
 
-        $result = $this->call('sendMessage', $parameters);
+        $result = $this->call(
+            'sendMessage',
+            $parameters
+        );
 
         if (!is_array($result)) {
             throw new RuntimeException(
                 'Telegram sendMessage returned an invalid result.'
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param int|string           $chatId
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    public function sendPhoto(
+        int|string $chatId,
+        string $photo,
+        array $options = []
+    ): array {
+        if (trim($photo) === '') {
+            throw new RuntimeException(
+                'Telegram photo value cannot be empty.'
+            );
+        }
+
+        $parameters = [
+            'chat_id' => $chatId,
+            'photo' => $photo,
+        ] + $options;
+
+        $result = $this->call(
+            'sendPhoto',
+            $parameters
+        );
+
+        if (!is_array($result)) {
+            throw new RuntimeException(
+                'Telegram sendPhoto returned an invalid result.'
             );
         }
 

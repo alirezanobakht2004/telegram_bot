@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 use SmartToolbox\Core\CommandRouter;
 use SmartToolbox\Core\Database;
+use SmartToolbox\Core\FileCache;
+use SmartToolbox\Core\HttpClient;
+use SmartToolbox\Core\RateLimiter;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
+use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Core\CoreModule;
 
 $rootPath = dirname(__DIR__);
@@ -108,6 +112,70 @@ try {
 
     $coreModule = new CoreModule();
     $coreModule->register($router);
+
+    if (
+        (bool) $config->get(
+            'modules.animals.enabled',
+            true
+        )
+    ) {
+        $http = new HttpClient(
+            userAgent: (string) $config->get(
+                'http.user_agent',
+                'SmartToolboxFaBot/1.0'
+            ),
+            connectTimeout: (int) $config->get(
+                'http.connect_timeout',
+                4
+            ),
+            timeout: (int) $config->get(
+                'http.timeout',
+                8
+            ),
+            maxResponseBytes: (int) $config->get(
+                'http.max_response_bytes',
+                1048576
+            )
+        );
+
+        $cache = new FileCache(
+            (string) $config->get('paths.cache')
+            . '/api'
+        );
+
+        $rateLimiter = new RateLimiter($pdo);
+
+        $animalsModule = new AnimalsModule(
+            http: $http,
+            cache: $cache,
+            rateLimiter: $rateLimiter,
+            dogEndpoint: (string) $config->get(
+                'modules.animals.providers.dog.endpoint'
+            ),
+            catEndpoint: (string) $config->get(
+                'modules.animals.providers.cat.endpoint'
+            ),
+            foxEndpoint: (string) $config->get(
+                'modules.animals.providers.fox.endpoint'
+            ),
+            logFile: (string) $config->get('paths.logs')
+                . '/animals.log',
+            cacheTtl: (int) $config->get(
+                'modules.animals.cache_ttl',
+                5
+            ),
+            maxAttempts: (int) $config->get(
+                'modules.animals.rate_limit.max_attempts',
+                8
+            ),
+            windowSeconds: (int) $config->get(
+                'modules.animals.rate_limit.window_seconds',
+                60
+            )
+        );
+
+        $animalsModule->register($router);
+    }
 
     $processor = new UpdateProcessor(
         $pdo,

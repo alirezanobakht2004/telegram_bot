@@ -29,5 +29,35 @@ return [
         'backups' => dirname(__DIR__) . '/storage/backups',
     ],
 
+    'http' => [
+        'user_agent' => 'SmartToolboxFaBot/1.0',
+        'connect_timeout' => 4,
+        'timeout' => 8,
+        'max_response_bytes' => 1048576,
+    ],
+
+    'modules' => [
+        'animals' => [
+            'enabled' => true,
+            'cache_ttl' => 5,
+            'rate_limit' => [
+                'max_attempts' => 8,
+                'window_seconds' => 60,
+            ],
+            'providers' => [
+                'dog' => [
+                    'endpoint' =>
+                        'https://dog.ceo/api/breeds/image/random',
+                ],
+                'cat' => [
+                    'endpoint' => 'https://cataas.com/cat',
+                ],
+                'fox' => [
+                    'endpoint' => 'https://randomfox.ca/floof/',
+                ],
+            ],
+        ],
+    ],
+
     'admins' => [],
 ];

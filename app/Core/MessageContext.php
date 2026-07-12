@@ -32,6 +32,30 @@ final readonly class MessageContext
         );
     }
 
+    /**
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    public function replyWithPhoto(
+        string $photo,
+        string $caption = '',
+        array $options = []
+    ): array {
+        if (
+            $caption !== ''
+            && !array_key_exists('caption', $options)
+        ) {
+            $options['caption'] = $caption;
+        }
+
+        return $this->telegram->sendPhoto(
+            $this->chatId,
+            $photo,
+            $options
+        );
+    }
+
     public function isPrivate(): bool
     {
         return $this->chatType === 'private';
@@ -44,5 +68,14 @@ final readonly class MessageContext
             ['group', 'supergroup'],
             true
         );
+    }
+
+    public function actorKey(): string
+    {
+        if ($this->userId !== null) {
+            return 'user:' . $this->userId;
+        }
+
+        return 'chat:' . $this->chatId;
     }
 }
