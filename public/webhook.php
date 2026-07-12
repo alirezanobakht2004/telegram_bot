@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use SmartToolbox\Core\CommandRouter;
 use SmartToolbox\Core\Database;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
+use SmartToolbox\Modules\Core\CoreModule;
 
 $rootPath = dirname(__DIR__);
 
@@ -17,10 +19,14 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
         http_response_code(405);
 
-        echo json_encode([
-            'ok' => false,
-            'error' => 'Method not allowed.',
-        ]);
+        echo json_encode(
+            [
+                'ok' => false,
+                'error' => 'Method not allowed.',
+            ],
+            JSON_UNESCAPED_UNICODE
+            | JSON_UNESCAPED_SLASHES
+        ) . PHP_EOL;
 
         exit;
     }
@@ -30,28 +36,39 @@ try {
     );
 
     $receivedSecret = (string) (
-        $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']
-        ?? ''
+        $_SERVER[
+            'HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'
+        ] ?? ''
     );
 
     if (
         $expectedSecret === ''
         || $receivedSecret === ''
-        || !hash_equals($expectedSecret, $receivedSecret)
+        || !hash_equals(
+            $expectedSecret,
+            $receivedSecret
+        )
     ) {
         http_response_code(403);
 
-        echo json_encode([
-            'ok' => false,
-            'error' => 'Forbidden.',
-        ]);
+        echo json_encode(
+            [
+                'ok' => false,
+                'error' => 'Forbidden.',
+            ],
+            JSON_UNESCAPED_UNICODE
+            | JSON_UNESCAPED_SLASHES
+        ) . PHP_EOL;
 
         exit;
     }
 
     $rawBody = file_get_contents('php://input');
 
-    if ($rawBody === false || trim($rawBody) === '') {
+    if (
+        $rawBody === false
+        || trim($rawBody) === ''
+    ) {
         throw new RuntimeException(
             'Webhook request body is empty.'
         );
@@ -85,24 +102,39 @@ try {
         (string) $config->get('telegram.token')
     );
 
+    $router = new CommandRouter(
+        (string) $config->get('telegram.username')
+    );
+
+    $coreModule = new CoreModule();
+    $coreModule->register($router);
+
     $processor = new UpdateProcessor(
         $pdo,
         $telegram,
-        (string) $config->get('telegram.username')
+        $router
     );
 
     $processor->process($update);
 
     http_response_code(200);
 
-    echo json_encode([
-        'ok' => true,
-    ]);
+    echo json_encode(
+        [
+            'ok' => true,
+        ],
+        JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
+    ) . PHP_EOL;
 } catch (Throwable $exception) {
     $logDirectory = $rootPath . '/storage/logs';
 
     if (!is_dir($logDirectory)) {
-        @mkdir($logDirectory, 0700, true);
+        @mkdir(
+            $logDirectory,
+            0700,
+            true
+        );
     }
 
     $logEntry = sprintf(
@@ -120,10 +152,17 @@ try {
 
     http_response_code(500);
 
-    header('Content-Type: application/json; charset=utf-8');
+    header(
+        'Content-Type: application/json; charset=utf-8'
+    );
+    header('Cache-Control: no-store');
 
-    echo json_encode([
-        'ok' => false,
-        'error' => 'Internal server error.',
-    ]);
+    echo json_encode(
+        [
+            'ok' => false,
+            'error' => 'Internal server error.',
+        ],
+        JSON_UNESCAPED_UNICODE
+        | JSON_UNESCAPED_SLASHES
+    ) . PHP_EOL;
 }

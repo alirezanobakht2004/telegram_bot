@@ -13,7 +13,7 @@ final class UpdateProcessor
     public function __construct(
         private readonly PDO $pdo,
         private readonly TelegramClient $telegram,
-        private readonly string $botUsername
+        private readonly CommandRouter $router
     ) {
     }
 
@@ -30,7 +30,9 @@ final class UpdateProcessor
             );
         }
 
-        if (!$this->claimUpdate($updateId, $this->detectUpdateType($update))) {
+        $updateType = $this->detectUpdateType($update);
+
+        if (!$this->claimUpdate($updateId, $updateType)) {
             return;
         }
 
@@ -66,7 +68,7 @@ final class UpdateProcessor
             if (is_string($text)) {
                 $this->handleTextMessage(
                     $chat,
-                    $user,
+                    is_array($user) ? $user : null,
                     trim($text)
                 );
             }
@@ -134,7 +136,8 @@ final class UpdateProcessor
              SET status = :status,
                  attempts = attempts + 1,
                  error_message = NULL,
-                 received_at = :received_at
+                 received_at = :received_at,
+                 processed_at = NULL
              WHERE update_id = :update_id
                AND status = :failed_status'
         );
@@ -220,10 +223,19 @@ final class UpdateProcessor
             'telegram_id' => $telegramId,
             'is_bot' => ($user['is_bot'] ?? false) ? 1 : 0,
             'first_name' => (string) ($user['first_name'] ?? ''),
-            'last_name' => $user['last_name'] ?? null,
-            'username' => $user['username'] ?? null,
-            'language_code' => $user['language_code'] ?? null,
-            'is_premium' => array_key_exists('is_premium', $user)
+            'last_name' => isset($user['last_name'])
+                ? (string) $user['last_name']
+                : null,
+            'username' => isset($user['username'])
+                ? (string) $user['username']
+                : null,
+            'language_code' => isset($user['language_code'])
+                ? (string) $user['language_code']
+                : null,
+            'is_premium' => array_key_exists(
+                'is_premium',
+                $user
+            )
                 ? (($user['is_premium'] ?? false) ? 1 : 0)
                 : null,
             'first_seen_at' => $now,
@@ -285,10 +297,18 @@ final class UpdateProcessor
         $statement->execute([
             'telegram_id' => $telegramId,
             'type' => (string) ($chat['type'] ?? 'unknown'),
-            'title' => $chat['title'] ?? null,
-            'username' => $chat['username'] ?? null,
-            'first_name' => $chat['first_name'] ?? null,
-            'last_name' => $chat['last_name'] ?? null,
+            'title' => isset($chat['title'])
+                ? (string) $chat['title']
+                : null,
+            'username' => isset($chat['username'])
+                ? (string) $chat['username']
+                : null,
+            'first_name' => isset($chat['first_name'])
+                ? (string) $chat['first_name']
+                : null,
+            'last_name' => isset($chat['last_name'])
+                ? (string) $chat['last_name']
+                : null,
             'first_seen_at' => $now,
             'last_seen_at' => $now,
         ]);
@@ -303,123 +323,33 @@ final class UpdateProcessor
         ?array $user,
         string $text
     ): void {
-        $command = $this->extractCommand($text);
+        $chatId = $chat['id'] ?? null;
 
-        if ($command === null) {
+        if (!is_int($chatId)) {
             return;
         }
+
+        $userId = null;
 
         if (
-            $command['mention'] !== null
-            && strcasecmp(
-                $command['mention'],
-                $this->botUsername
-            ) !== 0
+            is_array($user)
+            && is_int($user['id'] ?? null)
         ) {
-            return;
+            $userId = $user['id'];
         }
 
-        $chatId = $chat['id'];
-        $firstName = is_array($user)
-            ? trim((string) ($user['first_name'] ?? ''))
-            : '';
-
-        switch ($command['name']) {
-            case 'start':
-                $this->telegram->sendMessage(
-                    $chatId,
-                    $this->startMessage($firstName)
-                );
-                break;
-
-            case 'menu':
-                $this->telegram->sendMessage(
-                    $chatId,
-                    $this->menuMessage()
-                );
-                break;
-
-            case 'help':
-                $this->telegram->sendMessage(
-                    $chatId,
-                    $this->helpMessage()
-                );
-                break;
-
-            default:
-                $this->telegram->sendMessage(
-                    $chatId,
-                    "این دستور هنوز پیاده‌سازی نشده است.\n\n"
-                    . "برای مشاهده راهنما از /help استفاده کن."
-                );
-        }
-    }
-
-    /**
-     * @return array{
-     *     name: string,
-     *     mention: ?string,
-     *     arguments: string
-     * }|null
-     */
-    private function extractCommand(string $text): ?array
-    {
-        $matched = preg_match(
-            '/^\/([a-z0-9_]+)(?:@([a-z0-9_]+))?(?:\s+(.*))?$/iu',
-            $text,
-            $matches
+        $context = new MessageContext(
+            chatId: $chatId,
+            chatType: (string) ($chat['type'] ?? 'unknown'),
+            userId: $userId,
+            firstName: is_array($user)
+                ? (string) ($user['first_name'] ?? '')
+                : '',
+            text: $text,
+            telegram: $this->telegram
         );
 
-        if ($matched !== 1) {
-            return null;
-        }
-
-        return [
-            'name' => strtolower($matches[1]),
-            'mention' => isset($matches[2])
-                ? $matches[2]
-                : null,
-            'arguments' => isset($matches[3])
-                ? trim($matches[3])
-                : '',
-        ];
-    }
-
-    private function startMessage(string $firstName): string
-    {
-        $greeting = $firstName !== ''
-            ? "سلام {$firstName} 👋"
-            : 'سلام 👋';
-
-        return $greeting . "\n\n"
-            . "به جعبه ابزار خوش آمدی.\n\n"
-            . "این ربات به‌صورت ماژولار در حال توسعه است و ابزارهایی "
-            . "مثل آب‌وهوا، ارز، تصاویر حیوانات و امکانات گروه را "
-            . "ارائه خواهد داد.\n\n"
-            . "دستورهای فعلی:\n"
-            . "/start - شروع ربات\n"
-            . "/menu - منوی اصلی\n"
-            . "/help - راهنما";
-    }
-
-    private function menuMessage(): string
-    {
-        return "🧰 منوی جعبه ابزار\n\n"
-            . "🌤 آب‌وهوا — به‌زودی\n"
-            . "💱 نرخ ارز — به‌زودی\n"
-            . "🐶 تصویر سگ — به‌زودی\n"
-            . "🐱 تصویر گربه — به‌زودی\n"
-            . "🦊 تصویر روباه — به‌زودی\n\n"
-            . "برای مشاهده راهنما: /help";
-    }
-
-    private function helpMessage(): string
-    {
-        return "راهنمای جعبه ابزار\n\n"
-            . "/start - شروع و ثبت کاربر\n"
-            . "/menu - نمایش منوی اصلی\n"
-            . "/help - نمایش این راهنما\n\n"
-            . "ربات هم در چت خصوصی و هم در گروه قابل استفاده است.";
+        $this->router->dispatch($context);
     }
 
     private function markCompleted(int $updateId): void
@@ -454,7 +384,11 @@ final class UpdateProcessor
         $statement->execute([
             'status' => 'failed',
             'processed_at' => date(DATE_ATOM),
-            'error_message' => mb_substr($errorMessage, 0, 1000),
+            'error_message' => mb_substr(
+                $errorMessage,
+                0,
+                1000
+            ),
             'update_id' => $updateId,
         ]);
     }
