@@ -20,7 +20,9 @@
     "scripts": {
         "check": "php scripts/check.php",
         "migrate": "php scripts/migrate.php",
-        "telegram:get-me": "php scripts/get_me.php"
+        "telegram:get-me": "php scripts/get_me.php",
+        "telegram:set-webhook": "php scripts/set_webhook.php",
+        "telegram:webhook-info": "php scripts/get_webhook_info.php"
     },
     "config": {
         "sort-packages": true,

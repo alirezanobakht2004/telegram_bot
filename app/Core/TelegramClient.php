@@ -145,4 +145,31 @@ final class TelegramClient
 
         return $result;
     }
+
+    /**
+     * @param int|string $chatId
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    public function sendMessage(
+        int|string $chatId,
+        string $text,
+        array $options = []
+    ): array {
+        $parameters = [
+            'chat_id' => $chatId,
+            'text' => $text,
+        ] + $options;
+
+        $result = $this->call('sendMessage', $parameters);
+
+        if (!is_array($result)) {
+            throw new RuntimeException(
+                'Telegram sendMessage returned an invalid result.'
+            );
+        }
+
+        return $result;
+    }
 }
