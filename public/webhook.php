@@ -11,6 +11,7 @@ use SmartToolbox\Core\RateLimiter;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Core\UserPreferenceStore;
+use SmartToolbox\Modules\Admin\AdminModule;
 use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Core\CoreModule;
 use SmartToolbox\Modules\Countries\CountriesDevProvider;
@@ -401,6 +402,43 @@ try {
         );
 
         $settingsModule->register($router);
+    }
+
+
+    if (
+        (bool) $config->get(
+            'modules.admin.enabled',
+            true
+        )
+    ) {
+        $adminModule = new AdminModule(
+            pdo: $pdo,
+            telegram: $telegram,
+            states: $conversationStates,
+            adminUserIds: (array) $config->get(
+                'admins',
+                []
+            ),
+            databasePath: (string) $config->get(
+                'database.path'
+            ),
+            logFile: (string) $config->get('paths.logs')
+                . '/admin.log',
+            stateTtl: (int) $config->get(
+                'modules.admin.state_ttl',
+                600
+            ),
+            broadcastBatchSize: (int) $config->get(
+                'modules.admin.broadcast_batch_size',
+                5
+            ),
+            maxBroadcastLength: (int) $config->get(
+                'modules.admin.max_broadcast_length',
+                3000
+            )
+        );
+
+        $adminModule->register($router);
     }
 
     $processor = new UpdateProcessor(

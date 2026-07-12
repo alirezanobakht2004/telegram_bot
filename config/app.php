@@ -143,7 +143,23 @@ return [
             'default_timezone' => 'Asia/Tehran',
             'default_password_length' => 20,
         ],
+
+        /*
+         * پنل مدیریت فقط برای Telegram user IDهای موجود
+         * در کلید admins فعال است.
+         *
+         * ارسال همگانی به‌صورت Batch کوچک انجام می‌شود تا
+         * Webhook و منابع محدود سرور تحت فشار قرار نگیرند.
+         */
+        'admin' => [
+            'enabled' => true,
+            'state_ttl' => 600,
+            'broadcast_batch_size' => 5,
+            'max_broadcast_length' => 3000,
+        ],
     ],
 
-    'admins' => [],
+    'admins' => [
+        47729048,
+    ],
 ];
