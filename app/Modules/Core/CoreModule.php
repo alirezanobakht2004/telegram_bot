@@ -106,10 +106,10 @@ final class CoreModule implements ModuleInterface
             . "🌤 آب‌وهوا و پیش‌بینی چندروزه\n"
             . "🌍 اطلاعات کشورها\n"
             . "💱 نرخ و تبدیل ارزهای رسمی\n"
+            . "🧰 ابزارهای داخلی و رایگان\n"
             . "🐶 تصویر تصادفی سگ\n"
             . "🐱 تصویر تصادفی گربه\n"
             . "🦊 تصویر تصادفی روباه\n"
-            . "🧰 ابزارهای کاربردی — به‌زودی\n"
             . "⚙️ تنظیمات حساب — به‌زودی\n"
             . "ℹ️ راهنمای ربات",
             $options
@@ -127,20 +127,21 @@ final class CoreModule implements ModuleInterface
             . "/country Iran — اطلاعات یک کشور\n"
             . "/randomcountry — کشور تصادفی\n"
             . "/currency 100 USD EUR — تبدیل ارز\n"
-            . "/currencies — نمونه کدهای ارزی\n"
+            . "/tools — ابزارهای داخلی\n"
+            . "/password 24 — رمز تصادفی\n"
+            . "/uuid — UUID نسخه 4\n"
+            . "/sha256 hello — هش SHA-256\n"
+            . "/base64 hello — تبدیل Base64\n"
+            . "/count متن — شمارش متن\n"
+            . "/random 1 100 — عدد تصادفی\n"
+            . "/coin — شیر یا خط\n"
+            . "/timestamp — زمان یونیکس\n"
             . "/dog — دریافت تصویر سگ\n"
             . "/cat — دریافت تصویر گربه\n"
             . "/fox — دریافت تصویر روباه\n"
             . "/cancel — لغو عملیات مرحله‌ای\n\n"
-            . "نمونه‌ها:\n"
-            . "/weather تهران\n"
-            . "/country ایران\n"
-            . "/country JP\n"
-            . "/currency 100 USD EUR\n\n"
             . "در چت خصوصی می‌توانی از دکمه‌های منو "
-            . "هم استفاده کنی.\n\n"
-            . "در گروه، دستور را همراه ورودی بفرست؛ مثلاً:\n"
-            . "/country@SmartToolboxFaBot Germany"
+            . "هم استفاده کنی."
         );
     }
 
@@ -208,7 +209,6 @@ final class CoreModule implements ModuleInterface
     private function comingSoonButtons(): array
     {
         return [
-            '🧰 ابزارها',
             '⚙️ تنظیمات',
         ];
     }

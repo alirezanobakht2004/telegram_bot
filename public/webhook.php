@@ -16,6 +16,7 @@ use SmartToolbox\Modules\Countries\CountriesDevProvider;
 use SmartToolbox\Modules\Countries\CountriesModule;
 use SmartToolbox\Modules\Currency\CurrencyModule;
 use SmartToolbox\Modules\Currency\FrankfurterProvider;
+use SmartToolbox\Modules\Utilities\UtilitiesModule;
 use SmartToolbox\Modules\Weather\WeatherModule;
 
 $rootPath = dirname(__DIR__);
@@ -318,6 +319,42 @@ try {
         );
 
         $countriesModule->register($router);
+    }
+
+    if (
+        (bool) $config->get(
+            'modules.utilities.enabled',
+            true
+        )
+    ) {
+        $utilitiesModule = new UtilitiesModule(
+            rateLimiter: $rateLimiter,
+            states: $conversationStates,
+            logFile: (string) $config->get('paths.logs')
+                . '/utilities.log',
+            timezone: (string) $config->get(
+                'app.timezone',
+                'Asia/Tehran'
+            ),
+            stateTtl: (int) $config->get(
+                'modules.utilities.state_ttl',
+                300
+            ),
+            maxAttempts: (int) $config->get(
+                'modules.utilities.rate_limit.max_attempts',
+                60
+            ),
+            windowSeconds: (int) $config->get(
+                'modules.utilities.rate_limit.window_seconds',
+                60
+            ),
+            maxInputLength: (int) $config->get(
+                'modules.utilities.max_input_length',
+                2500
+            )
+        );
+
+        $utilitiesModule->register($router);
     }
 
     $processor = new UpdateProcessor(

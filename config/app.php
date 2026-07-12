@@ -104,11 +104,6 @@ return [
 
         'countries' => [
             'enabled' => true,
-
-            /*
-             * اطلاعات کشورها کم‌تغییر است و یک روز کش می‌شود.
-             * کشور تصادفی عمداً کش نمی‌شود.
-             */
             'cache_ttl' => 86400,
             'state_ttl' => 300,
 
@@ -117,11 +112,23 @@ return [
                 'window_seconds' => 60,
             ],
 
-            /*
-             * کاملاً رایگان، بدون API Key و بدون ثبت‌نام.
-             */
             'provider' => [
                 'base_url' => 'https://countries.dev',
+            ],
+        ],
+
+        /*
+         * این ماژول هیچ API خارجی ندارد و تمام پردازش‌ها
+         * مستقیماً داخل PHP انجام می‌شوند.
+         */
+        'utilities' => [
+            'enabled' => true,
+            'state_ttl' => 300,
+            'max_input_length' => 2500,
+
+            'rate_limit' => [
+                'max_attempts' => 60,
+                'window_seconds' => 60,
             ],
         ],
     ],
