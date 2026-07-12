@@ -13,6 +13,9 @@ use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Core\UserPreferenceStore;
 use SmartToolbox\Modules\Admin\AdminModule;
 use SmartToolbox\Modules\Animals\AnimalsModule;
+use SmartToolbox\Modules\Calculator\CalculatorModule;
+use SmartToolbox\Modules\Calculator\ExpressionCalculator;
+use SmartToolbox\Modules\Calculator\UnitConverter;
 use SmartToolbox\Modules\Core\CoreModule;
 use SmartToolbox\Modules\Countries\CountriesDevProvider;
 use SmartToolbox\Modules\Countries\CountriesModule;
@@ -326,6 +329,45 @@ try {
         );
 
         $countriesModule->register($router);
+    }
+
+
+    if (
+        (bool) $config->get(
+            'modules.calculator.enabled',
+            true
+        )
+    ) {
+        $calculatorModule = new CalculatorModule(
+            calculator: new ExpressionCalculator(),
+            converter: new UnitConverter(),
+            rateLimiter: $rateLimiter,
+            states: $conversationStates,
+            logFile: (string) $config->get('paths.logs')
+                . '/calculator.log',
+            stateTtl: (int) $config->get(
+                'modules.calculator.state_ttl',
+                300
+            ),
+            maxAttempts: (int) $config->get(
+                'modules.calculator.rate_limit.max_attempts',
+                60
+            ),
+            windowSeconds: (int) $config->get(
+                'modules.calculator.rate_limit.window_seconds',
+                60
+            ),
+            maxExpressionLength: (int) $config->get(
+                'modules.calculator.max_expression_length',
+                500
+            ),
+            maxConversionLength: (int) $config->get(
+                'modules.calculator.max_conversion_length',
+                200
+            )
+        );
+
+        $calculatorModule->register($router);
     }
 
     if (

@@ -117,6 +117,24 @@ return [
             ],
         ],
 
+
+        /*
+         * ماشین حساب و تبدیل واحد بدون API خارجی اجرا می‌شوند.
+         * هیچ عبارت PHP یا eval اجرا نمی‌شود؛ Parser اختصاصی و
+         * فهرست سفید عملگرها و توابع استفاده می‌شود.
+         */
+        'calculator' => [
+            'enabled' => true,
+            'state_ttl' => 300,
+            'max_expression_length' => 500,
+            'max_conversion_length' => 200,
+
+            'rate_limit' => [
+                'max_attempts' => 60,
+                'window_seconds' => 60,
+            ],
+        ],
+
         /*
          * این ماژول هیچ API خارجی ندارد و تمام پردازش‌ها
          * مستقیماً داخل PHP انجام می‌شوند.

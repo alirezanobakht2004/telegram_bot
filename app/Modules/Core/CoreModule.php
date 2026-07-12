@@ -106,6 +106,7 @@ final class CoreModule implements ModuleInterface
             . "🌤 آب‌وهوا و پیش‌بینی چندروزه\n"
             . "🌍 اطلاعات کشورها\n"
             . "💱 نرخ و تبدیل ارزهای رسمی\n"
+            . "🧮 ماشین حساب و تبدیل واحد\n"
             . "🧰 ابزارهای داخلی و رایگان\n"
             . "🐶 تصویر تصادفی سگ\n"
             . "🐱 تصویر تصادفی گربه\n"
@@ -127,6 +128,9 @@ final class CoreModule implements ModuleInterface
             . "/country Iran — اطلاعات یک کشور\n"
             . "/randomcountry — کشور تصادفی\n"
             . "/currency 100 USD EUR — تبدیل ارز\n"
+            . "/calc 2*(3+4) — محاسبه امن\n"
+            . "/convert 10 km mi — تبدیل واحد\n"
+            . "/units — فهرست واحدها\n"
             . "/tools — ابزارهای داخلی\n"
             . "/password 24 — رمز تصادفی\n"
             . "/uuid — UUID نسخه 4\n"
@@ -176,7 +180,15 @@ final class CoreModule implements ModuleInterface
                         'text' => '💱 نرخ ارز',
                     ],
                     [
+                        'text' => '🧮 ماشین حساب',
+                    ],
+                ],
+                [
+                    [
                         'text' => '🧰 ابزارها',
+                    ],
+                    [
+                        'text' => '⚙️ تنظیمات',
                     ],
                 ],
                 [
@@ -191,9 +203,6 @@ final class CoreModule implements ModuleInterface
                     ],
                 ],
                 [
-                    [
-                        'text' => '⚙️ تنظیمات',
-                    ],
                     [
                         'text' => 'ℹ️ راهنما',
                     ],
