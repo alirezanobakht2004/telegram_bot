@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use JsonException;
 use SmartToolbox\Core\Database;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
@@ -65,7 +64,7 @@ try {
             512,
             JSON_THROW_ON_ERROR
         );
-    } catch (JsonException $exception) {
+    } catch (\JsonException $exception) {
         throw new RuntimeException(
             'Webhook body contains invalid JSON.',
             previous: $exception
