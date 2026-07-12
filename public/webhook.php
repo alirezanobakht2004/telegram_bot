@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use SmartToolbox\Core\CommandRouter;
+use SmartToolbox\Core\ConversationStateStore;
 use SmartToolbox\Core\Database;
 use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\HttpClient;
@@ -11,6 +12,7 @@ use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Core\CoreModule;
+use SmartToolbox\Modules\Weather\WeatherModule;
 
 $rootPath = dirname(__DIR__);
 
@@ -113,38 +115,38 @@ try {
     $coreModule = new CoreModule();
     $coreModule->register($router);
 
+    $http = new HttpClient(
+        userAgent: (string) $config->get(
+            'http.user_agent',
+            'SmartToolboxFaBot/1.0'
+        ),
+        connectTimeout: (int) $config->get(
+            'http.connect_timeout',
+            4
+        ),
+        timeout: (int) $config->get(
+            'http.timeout',
+            8
+        ),
+        maxResponseBytes: (int) $config->get(
+            'http.max_response_bytes',
+            1048576
+        )
+    );
+
+    $cache = new FileCache(
+        (string) $config->get('paths.cache')
+        . '/api'
+    );
+
+    $rateLimiter = new RateLimiter($pdo);
+
     if (
         (bool) $config->get(
             'modules.animals.enabled',
             true
         )
     ) {
-        $http = new HttpClient(
-            userAgent: (string) $config->get(
-                'http.user_agent',
-                'SmartToolboxFaBot/1.0'
-            ),
-            connectTimeout: (int) $config->get(
-                'http.connect_timeout',
-                4
-            ),
-            timeout: (int) $config->get(
-                'http.timeout',
-                8
-            ),
-            maxResponseBytes: (int) $config->get(
-                'http.max_response_bytes',
-                1048576
-            )
-        );
-
-        $cache = new FileCache(
-            (string) $config->get('paths.cache')
-            . '/api'
-        );
-
-        $rateLimiter = new RateLimiter($pdo);
-
         $animalsModule = new AnimalsModule(
             http: $http,
             cache: $cache,
@@ -166,7 +168,7 @@ try {
             ),
             maxAttempts: (int) $config->get(
                 'modules.animals.rate_limit.max_attempts',
-                8
+                30
             ),
             windowSeconds: (int) $config->get(
                 'modules.animals.rate_limit.window_seconds',
@@ -175,6 +177,58 @@ try {
         );
 
         $animalsModule->register($router);
+    }
+
+    if (
+        (bool) $config->get(
+            'modules.weather.enabled',
+            true
+        )
+    ) {
+        $conversationStates = new ConversationStateStore(
+            $pdo
+        );
+
+        $weatherModule = new WeatherModule(
+            http: $http,
+            cache: $cache,
+            rateLimiter: $rateLimiter,
+            states: $conversationStates,
+            geocodingEndpoint: (string) $config->get(
+                'modules.weather.providers.geocoding_endpoint'
+            ),
+            forecastEndpoint: (string) $config->get(
+                'modules.weather.providers.forecast_endpoint'
+            ),
+            logFile: (string) $config->get('paths.logs')
+                . '/weather.log',
+            geocodingCacheTtl: (int) $config->get(
+                'modules.weather.geocoding_cache_ttl',
+                86400
+            ),
+            forecastCacheTtl: (int) $config->get(
+                'modules.weather.forecast_cache_ttl',
+                600
+            ),
+            stateTtl: (int) $config->get(
+                'modules.weather.state_ttl',
+                300
+            ),
+            maxAttempts: (int) $config->get(
+                'modules.weather.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $config->get(
+                'modules.weather.rate_limit.window_seconds',
+                60
+            ),
+            forecastDays: (int) $config->get(
+                'modules.weather.forecast_days',
+                4
+            )
+        );
+
+        $weatherModule->register($router);
     }
 
     $processor = new UpdateProcessor(

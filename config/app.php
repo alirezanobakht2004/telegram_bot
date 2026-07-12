@@ -39,17 +39,8 @@ return [
     'modules' => [
         'animals' => [
             'enabled' => true,
-
-            /*
-             * مدت نگهداری URL تصویر در کش.
-             * مقدار پایین باعث می‌شود تصاویر تصادفی سریع‌تر عوض شوند.
-             */
             'cache_ttl' => 5,
 
-            /*
-             * حداکثر 30 درخواست در 60 ثانیه
-             * برای هر کاربر یا هر چت.
-             */
             'rate_limit' => [
                 'max_attempts' => 30,
                 'window_seconds' => 60,
@@ -70,6 +61,41 @@ return [
                     'endpoint' =>
                         'https://randomfox.ca/floof/',
                 ],
+            ],
+        ],
+
+        'weather' => [
+            'enabled' => true,
+
+            /*
+             * نتیجه جست‌وجوی شهر یک روز نگهداری می‌شود؛
+             * پیش‌بینی برای ده دقیقه کش می‌شود.
+             */
+            'geocoding_cache_ttl' => 86400,
+            'forecast_cache_ttl' => 600,
+
+            /*
+             * کاربر پس از لمس دکمه آب‌وهوا پنج دقیقه فرصت دارد
+             * نام شهر را ارسال کند.
+             */
+            'state_ttl' => 300,
+
+            /*
+             * محدودیت مستقل ماژول آب‌وهوا.
+             */
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+
+            'forecast_days' => 4,
+
+            'providers' => [
+                'geocoding_endpoint' =>
+                    'https://geocoding-api.open-meteo.com/v1/search',
+
+                'forecast_endpoint' =>
+                    'https://api.open-meteo.com/v1/forecast',
             ],
         ],
     ],

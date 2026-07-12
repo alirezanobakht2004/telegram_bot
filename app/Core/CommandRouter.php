@@ -19,7 +19,12 @@ final class CommandRouter
     private array $textHandlers = [];
 
     /**
-     * @var Closure(MessageContext, string)|null
+     * @var list<Closure(MessageContext, string): bool>
+     */
+    private array $fallbackTextHandlers = [];
+
+    /**
+     * @var Closure(MessageContext, string): void|null
      */
     private ?Closure $unknownCommandHandler = null;
 
@@ -61,6 +66,21 @@ final class CommandRouter
     ): self {
         $this->textHandlers[$this->normalizeText($text)] =
             Closure::fromCallable($handler);
+
+        return $this;
+    }
+
+    /**
+     * این Handlerها فقط وقتی اجرا می‌شوند که متن، دستور یا دکمه
+     * ثبت‌شده نباشد. اولین Handler که true برگرداند، متن را مصرف می‌کند.
+     *
+     * @param callable(MessageContext, string): bool $handler
+     */
+    public function fallbackText(callable $handler): self
+    {
+        $this->fallbackTextHandlers[] = Closure::fromCallable(
+            $handler
+        );
 
         return $this;
     }
@@ -114,17 +134,27 @@ final class CommandRouter
             return false;
         }
 
+        $normalizedText = $this->normalizeText(
+            $context->text
+        );
+
         $handler = $this->textHandlers[
-            $this->normalizeText($context->text)
+            $normalizedText
         ] ?? null;
 
-        if ($handler === null) {
-            return false;
+        if ($handler !== null) {
+            $handler($context, '');
+
+            return true;
         }
 
-        $handler($context, '');
+        foreach ($this->fallbackTextHandlers as $fallbackHandler) {
+            if ($fallbackHandler($context, $context->text)) {
+                return true;
+            }
+        }
 
-        return true;
+        return false;
     }
 
     /**

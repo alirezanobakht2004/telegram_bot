@@ -103,10 +103,10 @@ final class CoreModule implements ModuleInterface
 
         $context->reply(
             "🧰 منوی اصلی جعبه ابزار\n\n"
+            . "🌤 آب‌وهوا و پیش‌بینی چندروزه\n"
             . "🐶 تصویر تصادفی سگ\n"
             . "🐱 تصویر تصادفی گربه\n"
             . "🦊 تصویر تصادفی روباه\n"
-            . "🌤 اطلاعات آب‌وهوا — به‌زودی\n"
             . "💱 نرخ و تبدیل ارز — به‌زودی\n"
             . "🧰 ابزارهای کاربردی — به‌زودی\n"
             . "⚙️ تنظیمات حساب — به‌زودی\n"
@@ -122,15 +122,18 @@ final class CoreModule implements ModuleInterface
             . "/start — شروع ربات\n"
             . "/menu — نمایش منوی اصلی\n"
             . "/help — نمایش راهنما\n"
+            . "/weather Tehran — آب‌وهوای یک شهر\n"
             . "/dog — دریافت تصویر سگ\n"
             . "/cat — دریافت تصویر گربه\n"
             . "/fox — دریافت تصویر روباه\n"
-            . "/weather — مشاهده آب‌وهوا؛ به‌زودی\n"
             . "/currency — نرخ و تبدیل ارز؛ به‌زودی\n\n"
-            . "ربات در چت خصوصی و گروه کار می‌کند. "
-            . "در گروه می‌توانی دستور را همراه نام ربات هم "
-            . "ارسال کنی؛ برای مثال:\n"
-            . "/dog@SmartToolboxFaBot"
+            . "نمونه‌ها:\n"
+            . "/weather تهران\n"
+            . "/weather Mashhad\n\n"
+            . "در چت خصوصی می‌توانی دکمه «🌤 آب‌وهوا» "
+            . "را هم لمس کنی و نام شهر را بفرستی.\n\n"
+            . "در گروه، دستور را همراه نام شهر بفرست؛ مثلاً:\n"
+            . "/weather@SmartToolboxFaBot Shiraz"
         );
     }
 
@@ -195,7 +198,6 @@ final class CoreModule implements ModuleInterface
     private function comingSoonButtons(): array
     {
         return [
-            '🌤 آب‌وهوا',
             '💱 نرخ ارز',
             '🧰 ابزارها',
             '⚙️ تنظیمات',
