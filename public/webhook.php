@@ -12,6 +12,8 @@ use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Core\CoreModule;
+use SmartToolbox\Modules\Currency\CurrencyModule;
+use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\Weather\WeatherModule;
 
 $rootPath = dirname(__DIR__);
@@ -141,6 +143,13 @@ try {
 
     $rateLimiter = new RateLimiter($pdo);
 
+    /*
+     * تمام ماژول‌های مرحله‌ای از یک Store مشترک استفاده می‌کنند.
+     */
+    $conversationStates = new ConversationStateStore(
+        $pdo
+    );
+
     if (
         (bool) $config->get(
             'modules.animals.enabled',
@@ -185,10 +194,6 @@ try {
             true
         )
     ) {
-        $conversationStates = new ConversationStateStore(
-            $pdo
-        );
-
         $weatherModule = new WeatherModule(
             http: $http,
             cache: $cache,
@@ -229,6 +234,47 @@ try {
         );
 
         $weatherModule->register($router);
+    }
+
+    if (
+        (bool) $config->get(
+            'modules.currency.enabled',
+            true
+        )
+    ) {
+        $currencyProvider = new FrankfurterProvider(
+            http: $http,
+            baseUrl: (string) $config->get(
+                'modules.currency.provider.base_url'
+            )
+        );
+
+        $currencyModule = new CurrencyModule(
+            provider: $currencyProvider,
+            cache: $cache,
+            rateLimiter: $rateLimiter,
+            states: $conversationStates,
+            logFile: (string) $config->get('paths.logs')
+                . '/currency.log',
+            rateCacheTtl: (int) $config->get(
+                'modules.currency.rate_cache_ttl',
+                3600
+            ),
+            stateTtl: (int) $config->get(
+                'modules.currency.state_ttl',
+                300
+            ),
+            maxAttempts: (int) $config->get(
+                'modules.currency.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $config->get(
+                'modules.currency.rate_limit.window_seconds',
+                60
+            )
+        );
+
+        $currencyModule->register($router);
     }
 
     $processor = new UpdateProcessor(

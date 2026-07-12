@@ -66,23 +66,10 @@ return [
 
         'weather' => [
             'enabled' => true,
-
-            /*
-             * نتیجه جست‌وجوی شهر یک روز نگهداری می‌شود؛
-             * پیش‌بینی برای ده دقیقه کش می‌شود.
-             */
             'geocoding_cache_ttl' => 86400,
             'forecast_cache_ttl' => 600,
-
-            /*
-             * کاربر پس از لمس دکمه آب‌وهوا پنج دقیقه فرصت دارد
-             * نام شهر را ارسال کند.
-             */
             'state_ttl' => 300,
 
-            /*
-             * محدودیت مستقل ماژول آب‌وهوا.
-             */
             'rate_limit' => [
                 'max_attempts' => 30,
                 'window_seconds' => 60,
@@ -96,6 +83,30 @@ return [
 
                 'forecast_endpoint' =>
                     'https://api.open-meteo.com/v1/forecast',
+            ],
+        ],
+
+        'currency' => [
+            'enabled' => true,
+
+            /*
+             * نرخ‌ها روزانه‌اند؛ یک ساعت کش باعث کاهش درخواست‌های
+             * خارجی می‌شود و همچنان داده مناسب نمایش داده می‌شود.
+             */
+            'rate_cache_ttl' => 3600,
+            'state_ttl' => 300,
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+
+            /*
+             * Frankfurter رایگان است و API Key لازم ندارد.
+             */
+            'provider' => [
+                'base_url' =>
+                    'https://api.frankfurter.dev/v2',
             ],
         ],
     ],
