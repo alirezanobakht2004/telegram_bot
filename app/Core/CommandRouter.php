@@ -26,6 +26,11 @@ final class CommandRouter
     private array $fallbackTextHandlers = [];
 
     /**
+     * @var list<array{handler: Closure, module: string}>
+     */
+    private array $fallbackCommandHandlers = [];
+
+    /**
      * @var array{handler: Closure, module: string}|null
      */
     private ?array $unknownCommandHandler = null;
@@ -109,6 +114,26 @@ final class CommandRouter
         return $this;
     }
 
+
+    /**
+     * Dynamic commands such as per-user shortcuts are checked after
+     * registered commands and before the generic unknown-command handler.
+     *
+     * @param callable(MessageContext, string, string): bool $handler
+     */
+    public function fallbackCommand(
+        callable $handler,
+        ?string $module = null
+    ): self {
+        $this->fallbackCommandHandlers[] = [
+            'handler' => Closure::fromCallable($handler),
+            'module' => $module
+                ?? $this->inferModule($handler),
+        ];
+
+        return $this;
+    }
+
     /**
      * @param callable(MessageContext, string): void $handler
      */
@@ -151,6 +176,71 @@ final class CommandRouter
                 );
 
                 return true;
+            }
+
+            foreach ($this->fallbackCommandHandlers as $fallback) {
+                $span = $this->usageTracker?->start(
+                    module: $fallback['module'],
+                    action: 'fallback_command.' . $command['name'],
+                    inputKind: 'command',
+                    context: $context->updateContext,
+                    userId: $context->userId,
+                    chatId: $context->chatId,
+                    chatType: $context->chatType
+                );
+
+                $startedAt = hrtime(true);
+
+                try {
+                    $consumed = ($fallback['handler'])(
+                        $context,
+                        $command['name'],
+                        $command['arguments']
+                    );
+
+                    $duration = max(
+                        0.0,
+                        (hrtime(true) - $startedAt) / 1_000_000
+                    );
+
+                    if (!$consumed) {
+                        $span?->discard();
+                        continue;
+                    }
+
+                    $span?->success();
+
+                    $this->history?->record(
+                        module: $fallback['module'],
+                        command: $command['name'],
+                        source: 'shortcut',
+                        arguments: $command['arguments'],
+                        success: true,
+                        durationMs: $duration,
+                        messageContext: $context
+                    );
+
+                    return true;
+                } catch (Throwable $exception) {
+                    $duration = max(
+                        0.0,
+                        (hrtime(true) - $startedAt) / 1_000_000
+                    );
+
+                    $span?->failure($exception);
+
+                    $this->history?->record(
+                        module: $fallback['module'],
+                        command: $command['name'],
+                        source: 'shortcut',
+                        arguments: $command['arguments'],
+                        success: false,
+                        durationMs: $duration,
+                        messageContext: $context
+                    );
+
+                    throw $exception;
+                }
             }
 
             if ($this->unknownCommandHandler !== null) {

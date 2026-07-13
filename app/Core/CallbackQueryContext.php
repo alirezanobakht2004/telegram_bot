@@ -60,6 +60,33 @@ final class CallbackQueryContext
             : null;
     }
 
+    public function chatType(): string
+    {
+        $type = $this->query[
+            'message'
+        ]['chat']['type'] ?? null;
+
+        return is_string($type)
+            ? $type
+            : 'private';
+    }
+
+    public function firstName(): string
+    {
+        $name = $this->query[
+            'from'
+        ]['first_name'] ?? '';
+
+        return is_string($name)
+            ? $name
+            : '';
+    }
+
+    public function telegram(): TelegramClient
+    {
+        return $this->telegram;
+    }
+
     public function messageId(): ?int
     {
         $id = $this->query['message']['message_id'] ?? null;
@@ -105,6 +132,30 @@ final class CallbackQueryContext
         $this->answered = true;
 
         return $result;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     *
+     * @return array<string, mixed>
+     */
+    public function reply(
+        string $text,
+        array $options = []
+    ): array {
+        $chatId = $this->chatId();
+
+        if ($chatId === null) {
+            throw new RuntimeException(
+                'Callback query does not contain a chat.'
+            );
+        }
+
+        return $this->telegram->sendMessage(
+            $chatId,
+            $text,
+            $options
+        );
     }
 
     public function ensureAnswered(): void

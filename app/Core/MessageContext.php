@@ -84,6 +84,11 @@ final readonly class MessageContext
         );
     }
 
+    public function telegram(): TelegramClient
+    {
+        return $this->telegram;
+    }
+
     public function isPrivate(): bool
     {
         return $this->chatType === 'private';

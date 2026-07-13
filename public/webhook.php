@@ -29,14 +29,29 @@ use SmartToolbox\Modules\Calculator\UnitConverter;
 use SmartToolbox\Modules\Core\CoreModule;
 use SmartToolbox\Modules\Countries\CountriesDevProvider;
 use SmartToolbox\Modules\Countries\CountriesModule;
+use SmartToolbox\Modules\Developer\CronExpression;
+use SmartToolbox\Modules\Developer\DeveloperUtilitiesModule;
+use SmartToolbox\Modules\Developer\JsonPathEvaluator;
+use SmartToolbox\Modules\Developer\UlidGenerator;
 use SmartToolbox\Modules\Currency\CurrencyModule;
 use SmartToolbox\Modules\Currency\FrankfurterProvider;
+use SmartToolbox\Modules\GitHub\GitHubClient;
+use SmartToolbox\Modules\GitHub\GitHubModule;
+use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
+use SmartToolbox\Modules\Inline\InlineDataService;
+use SmartToolbox\Modules\Inline\InlineModule;
+use SmartToolbox\Modules\Inline\InlineResultFactory;
+use SmartToolbox\Modules\Inline\InlineSelectionRecorder;
+use SmartToolbox\Modules\Profile\ProfileModule;
+use SmartToolbox\Modules\Profile\ProfileRepository;
 use SmartToolbox\Modules\Reminders\ReminderModule;
 use SmartToolbox\Modules\Reminders\ReminderRepository;
 use SmartToolbox\Modules\Reminders\ReminderTimeParser;
 use SmartToolbox\Modules\Utilities\UtilitiesModule;
 use SmartToolbox\Modules\Settings\SettingsModule;
 use SmartToolbox\Modules\Weather\WeatherModule;
+use SmartToolbox\Modules\Wiki\WikiClient;
+use SmartToolbox\Modules\Wiki\WikiModule;
 
 $rootPath = dirname(__DIR__);
 
@@ -246,9 +261,6 @@ try {
         'core'
     );
 
-    $coreModule = new CoreModule();
-    $coreModule->register($router);
-
     $ssrfGuard = new SsrfGuard(
         allowHttp: (bool) $runtime->get(
             'http.ssrf.allow_http',
@@ -301,6 +313,72 @@ try {
     );
 
     $userPreferences = new UserPreferenceStore(
+        $pdo
+    );
+
+    (new CoreModule(
+        preferences: $userPreferences
+    ))->register($router);
+
+    $profileRepository = new ProfileRepository(
+        $pdo
+    );
+
+    $wikiClient = new WikiClient(
+        http: $http,
+        cache: $cache,
+        searchCacheTtl: (int) $runtime->get(
+            'modules.wiki.search_cache_ttl',
+            21600
+        ),
+        randomCacheTtl: (int) $runtime->get(
+            'modules.wiki.random_cache_ttl',
+            300
+        ),
+        todayCacheTtl: (int) $runtime->get(
+            'modules.wiki.today_cache_ttl',
+            21600
+        )
+    );
+
+    $githubClient = new GitHubClient(
+        cache: $cache,
+        userAgent: (string) $config->get(
+            'http.user_agent',
+            'SmartToolboxFaBot/1.0'
+        ),
+        token: (string) $config->get(
+            'modules.github.token',
+            ''
+        ),
+        apiVersion: (string) $runtime->get(
+            'modules.github.api_version',
+            '2026-03-10'
+        ),
+        cacheTtl: (int) $runtime->get(
+            'modules.github.cache_ttl',
+            1800
+        ),
+        releaseCacheTtl: (int) $runtime->get(
+            'modules.github.release_cache_ttl',
+            900
+        ),
+        connectTimeout: (int) $runtime->get(
+            'http.connect_timeout',
+            4
+        ),
+        timeout: (int) $runtime->get(
+            'http.timeout',
+            8
+        ),
+        maxResponseBytes: (int) $runtime->get(
+            'http.max_response_bytes',
+            1048576
+        ),
+        metrics: $apiMetrics
+    );
+
+    $githubWatches = new GitHubWatchRepository(
         $pdo
     );
 
@@ -639,6 +717,134 @@ try {
     }
 
 
+
+    if (
+        (bool) $runtime->get(
+            'modules.wiki.enabled',
+            true
+        )
+    ) {
+        (new WikiModule(
+            client: $wikiClient,
+            rateLimiter: $rateLimiter,
+            maxAttempts: (int) $runtime->get(
+                'modules.wiki.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.wiki.rate_limit.window_seconds',
+                60
+            ),
+            maxQueryLength: (int) $runtime->get(
+                'modules.wiki.max_query_length',
+                150
+            )
+        ))->register($router);
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.github.enabled',
+            true
+        )
+    ) {
+        (new GitHubModule(
+            client: $githubClient,
+            watches: $githubWatches,
+            rateLimiter: $rateLimiter,
+            maxWatchesPerUser: (int) $runtime->get(
+                'modules.github.max_watches_per_user',
+                20
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.github.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.github.rate_limit.window_seconds',
+                60
+            )
+        ))->register($router);
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.developer.enabled',
+            true
+        )
+    ) {
+        (new DeveloperUtilitiesModule(
+            jsonPath: new JsonPathEvaluator(),
+            ulid: new UlidGenerator(),
+            cron: new CronExpression(),
+            rateLimiter: $rateLimiter,
+            logFile: (string) $config->get(
+                'paths.logs'
+            ) . '/developer.log',
+            defaultTimezone: (string) $runtime->get(
+                'modules.settings.default_timezone',
+                (string) $config->get(
+                    'app.timezone',
+                    'Asia/Tehran'
+                )
+            ),
+            maxInputLength: (int) $runtime->get(
+                'modules.developer.max_input_length',
+                3000
+            ),
+            maxRegexPatternLength: (int) $runtime->get(
+                'modules.developer.max_regex_pattern_length',
+                300
+            ),
+            regexBacktrackLimit: (int) $runtime->get(
+                'modules.developer.regex_backtrack_limit',
+                100000
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.developer.rate_limit.max_attempts',
+                60
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.developer.rate_limit.window_seconds',
+                60
+            )
+        ))->register($router);
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.profile.enabled',
+            true
+        )
+    ) {
+        $profileModule = new ProfileModule(
+            repository: $profileRepository,
+            rateLimiter: $rateLimiter,
+            preferences: $userPreferences,
+            maxFavorites: (int) $runtime->get(
+                'modules.profile.max_favorites',
+                50
+            ),
+            maxShortcuts: (int) $runtime->get(
+                'modules.profile.max_shortcuts',
+                30
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.profile.rate_limit.max_attempts',
+                60
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.profile.rate_limit.window_seconds',
+                60
+            )
+        );
+
+        $profileModule->register($router);
+        $profileModule->registerCallbacks(
+            $callbackRouter
+        );
+    }
+
     if (
         (bool) $runtime->get(
             'modules.admin.enabled',
@@ -674,6 +880,88 @@ try {
 
         $adminModule->register($router);
     }
+
+
+    if (
+        (bool) $runtime->get(
+            'modules.inline.enabled',
+            true
+        )
+    ) {
+        $inlineCurrency =
+            new FrankfurterProvider(
+                http: $http,
+                baseUrl: (string) $config->get(
+                    'modules.currency.provider.base_url'
+                )
+            );
+
+        $inlineCountries =
+            new CountriesDevProvider(
+                http: $http,
+                baseUrl: (string) $config->get(
+                    'modules.countries.provider.base_url'
+                )
+            );
+
+        (new InlineModule(
+            data: new InlineDataService(
+                http: $http,
+                cache: $cache,
+                currency: $inlineCurrency,
+                countries: $inlineCountries,
+                calculator:
+                    new ExpressionCalculator(),
+                wiki: $wikiClient,
+                github: $githubClient,
+                geocodingEndpoint:
+                    (string) $config->get(
+                        'modules.weather.providers.geocoding_endpoint'
+                    ),
+                forecastEndpoint:
+                    (string) $config->get(
+                        'modules.weather.providers.forecast_endpoint'
+                    ),
+                weatherCacheTtl:
+                    (int) $runtime->get(
+                        'modules.inline.weather_cache_ttl',
+                        600
+                    )
+            ),
+            factory: new InlineResultFactory(),
+            rateLimiter: $rateLimiter,
+            cacheTime: (int) $runtime->get(
+                'modules.inline.cache_time',
+                60
+            ),
+            maxResults: (int) $runtime->get(
+                'modules.inline.max_results',
+                5
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.inline.rate_limit.max_attempts',
+                40
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.inline.rate_limit.window_seconds',
+                60
+            )
+        ))->register($inlineRouter);
+    }
+
+    $inlineSelectionRecorder =
+        new InlineSelectionRecorder($pdo);
+
+    $events->listen(
+        'update.chosen_inline_result',
+        static function ($context) use (
+            $inlineSelectionRecorder
+        ): void {
+            $inlineSelectionRecorder->record(
+                $context
+            );
+        }
+    );
 
     $processor = new UpdateProcessor(
         pdo: $pdo,

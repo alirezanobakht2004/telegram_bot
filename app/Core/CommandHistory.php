@@ -19,6 +19,11 @@ final class CommandHistory
         'base64decode',
         'jwtdecode',
         'regex',
+        'json',
+        'jsonpath',
+        'urlencode',
+        'urldecode',
+        'useragent',
     ];
 
     public function __construct(

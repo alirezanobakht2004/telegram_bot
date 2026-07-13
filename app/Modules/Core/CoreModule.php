@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace SmartToolbox\Modules\Core;
 
+use JsonException;
 use SmartToolbox\Core\CommandRouter;
 use SmartToolbox\Core\MessageContext;
 use SmartToolbox\Core\ModuleInterface;
+use SmartToolbox\Core\UserPreferenceStore;
 
 final class CoreModule implements ModuleInterface
 {
+    public function __construct(
+        private readonly ?UserPreferenceStore $preferences = null
+    ) {
+    }
+
     public function register(CommandRouter $router): void
     {
         $router->command(
@@ -47,15 +54,6 @@ final class CoreModule implements ModuleInterface
             }
         );
 
-        foreach ($this->comingSoonButtons() as $button) {
-            $router->text(
-                $button,
-                function (MessageContext $context): void {
-                    $this->comingSoon($context);
-                }
-            );
-        }
-
         $router->unknownCommand(
             static function (
                 MessageContext $context,
@@ -69,153 +67,156 @@ final class CoreModule implements ModuleInterface
         );
     }
 
-    private function start(MessageContext $context): void
-    {
+    private function start(
+        MessageContext $context
+    ): void {
         $name = trim($context->firstName);
+        $english = $this->english($context);
 
-        $greeting = $name !== ''
-            ? "سلام {$name} 👋"
-            : 'سلام 👋';
+        $greeting = $english
+            ? (
+                $name !== ''
+                    ? "Hello {$name} 👋"
+                    : 'Hello 👋'
+            )
+            : (
+                $name !== ''
+                    ? "سلام {$name} 👋"
+                    : 'سلام 👋'
+            );
 
         $options = [];
 
         if ($context->isPrivate()) {
-            $options['reply_markup'] = $this->mainKeyboard();
+            $options['reply_markup'] =
+                $this->mainKeyboard($context);
         }
 
         $context->reply(
             $greeting . "\n\n"
-            . "به جعبه ابزار خوش آمدی.\n\n"
-            . "اینجا به ابزارهای اطلاعاتی، کاربردی و سرگرمی "
-            . "دسترسی خواهی داشت.\n\n"
-            . "برای شروع یکی از گزینه‌های منو را انتخاب کن.",
+            . (
+                $english
+                    ? "Welcome to Smart Toolbox.\n\nChoose a tool from the menu."
+                    : "به جعبه ابزار خوش آمدی.\n\nیکی از ابزارهای منو را انتخاب کن."
+            ),
             $options
         );
     }
 
-    private function menu(MessageContext $context): void
-    {
+    private function menu(
+        MessageContext $context
+    ): void {
         $options = [];
 
         if ($context->isPrivate()) {
-            $options['reply_markup'] = $this->mainKeyboard();
+            $options['reply_markup'] =
+                $this->mainKeyboard($context);
         }
 
+        $english = $this->english($context);
+
         $context->reply(
-            "🧰 منوی اصلی جعبه ابزار\n\n"
-            . "🌤 آب‌وهوا و پیش‌بینی چندروزه\n"
-            . "🌍 اطلاعات کشورها\n"
-            . "💱 نرخ و تبدیل ارزهای رسمی\n"
-            . "⏰ یادآورها و اعلان‌های زمان‌بندی‌شده\n"
-            . "🧮 ماشین حساب و تبدیل واحد\n"
-            . "🧰 ابزارهای داخلی و رایگان\n"
-            . "🐶 تصویر تصادفی سگ\n"
-            . "🐱 تصویر تصادفی گربه\n"
-            . "🦊 تصویر تصادفی روباه\n"
-            . "⚙️ تنظیمات شخصی\n"
-            . "ℹ️ راهنمای ربات",
+            $english
+                ? "🧰 Smart Toolbox\n\n"
+                    . "Weather, countries, currencies, reminders, calculator, Wikipedia, GitHub, developer utilities, favorites, shortcuts and personal settings."
+                : "🧰 منوی اصلی جعبه ابزار\n\n"
+                    . "🌤 آب‌وهوا و پیش‌بینی\n"
+                    . "🌍 اطلاعات کشورها\n"
+                    . "💱 تبدیل ارز رسمی\n"
+                    . "⏰ یادآورها\n"
+                    . "🧮 ماشین حساب و تبدیل واحد\n"
+                    . "📚 ویکی‌پدیا\n"
+                    . "🐙 GitHub و Release Watch\n"
+                    . "🧑‍💻 ابزارهای توسعه‌دهندگان\n"
+                    . "👤 پروفایل، علاقه‌مندی و میان‌بر\n"
+                    . "⚙️ تنظیمات شخصی",
             $options
         );
     }
 
-    private function help(MessageContext $context): void
-    {
+    private function help(
+        MessageContext $context
+    ): void {
         $context->reply(
             "ℹ️ راهنمای جعبه ابزار\n\n"
-            . "/start — شروع ربات\n"
-            . "/menu — نمایش منوی اصلی\n"
-            . "/help — نمایش راهنما\n"
-            . "/weather Tehran — آب‌وهوای یک شهر\n"
-            . "/country Iran — اطلاعات یک کشور\n"
-            . "/randomcountry — کشور تصادفی\n"
-            . "/currency 100 USD EUR — تبدیل ارز\n"
-            . "/remind 10m خرید شیر — ساخت یادآور\n"
-            . "/reminders — یادآورهای فعال\n"
-            . "/remindercancel 12 — لغو یادآور\n"
-            . "/reminderhistory — تاریخچه یادآورها\n"
-            . "/calc 2*(3+4) — محاسبه امن\n"
-            . "/convert 10 km mi — تبدیل واحد\n"
-            . "/units — فهرست واحدها\n"
-            . "/tools — ابزارهای داخلی\n"
-            . "/password 24 — رمز تصادفی\n"
-            . "/uuid — UUID نسخه 4\n"
-            . "/sha256 hello — هش SHA-256\n"
-            . "/base64 hello — تبدیل Base64\n"
-            . "/count متن — شمارش متن\n"
-            . "/random 1 100 — عدد تصادفی\n"
-            . "/coin — شیر یا خط\n"
-            . "/timestamp — زمان یونیکس\n"
-            . "/settings — تنظیمات شخصی\n"
-            . "/settimezone Asia/Tehran — منطقه زمانی\n"
-            . "/setpasswordlength 24 — طول پیش‌فرض رمز\n"
-            . "/dog — دریافت تصویر سگ\n"
-            . "/cat — دریافت تصویر گربه\n"
-            . "/fox — دریافت تصویر روباه\n"
-            . "/cancel — لغو عملیات مرحله‌ای\n\n"
-            . "در چت خصوصی می‌توانی از دکمه‌های منو "
-            . "هم استفاده کنی."
-        );
-    }
-
-    private function comingSoon(MessageContext $context): void
-    {
-        $context->reply(
-            "این بخش در حال آماده‌سازی است. 🛠\n\n"
-            . 'در مرحله بعد به قابلیت واقعی متصل می‌شود.'
+            . "/weather Tehran — آب‌وهوا\n"
+            . "/country Iran — کشور\n"
+            . "/currency 100 USD EUR — ارز\n"
+            . "/remind 10m خرید شیر — یادآور\n"
+            . "/calc 2*(3+4) — ماشین حساب\n"
+            . "/wiki PHP — ویکی‌پدیا\n"
+            . "/randomwiki — مقاله تصادفی\n"
+            . "/today — رویدادهای امروز\n"
+            . "/github php/php-src — مخزن GitHub\n"
+            . "/release owner/repo — آخرین Release\n"
+            . "/issues owner/repo — Issueهای باز\n"
+            . "/watchrelease owner/repo — هشدار Release\n\n"
+            . "/favorite weather Tehran — علاقه‌مندی\n"
+            . "/favorites — فهرست علاقه‌مندی‌ها\n"
+            . "/setshortcut office weather Tehran — میان‌بر\n"
+            . "/shortcuts — فهرست میان‌برها\n"
+            . "/history — تاریخچه دستورها\n"
+            . "/profile — پروفایل\n"
+            . "/profilesettings — تنظیمات پروفایل\n\n"
+            . "/json، /jsonpath، /regex\n"
+            . "/base64، /base64decode\n"
+            . "/urlencode، /urldecode\n"
+            . "/jwtdecode، /hash\n"
+            . "/uuid، /ulid، /timestamp\n"
+            . "/cron، /color، /ip، /useragent\n\n"
+            . "Inline:\n"
+            . "@SmartToolboxFaBot weather Tehran\n"
+            . "@SmartToolboxFaBot calc 2*(8+3)\n"
+            . "@SmartToolboxFaBot wiki PHP\n"
+            . "@SmartToolboxFaBot github php/php-src"
         );
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function mainKeyboard(): array
-    {
+    private function mainKeyboard(
+        MessageContext $context
+    ): array {
+        $order = $this->menuOrder($context);
+        $rows = [];
+        $buffer = [];
+
+        foreach ($order as $item) {
+            if ($item === 'animals') {
+                if ($buffer !== []) {
+                    $rows[] = $buffer;
+                    $buffer = [];
+                }
+
+                $rows[] = [
+                    ['text' => '🐶 سگ'],
+                    ['text' => '🐱 گربه'],
+                    ['text' => '🦊 روباه'],
+                ];
+                continue;
+            }
+
+            $button = $this->menuButton($item);
+
+            if ($button === null) {
+                continue;
+            }
+
+            $buffer[] = $button;
+
+            if (count($buffer) === 2) {
+                $rows[] = $buffer;
+                $buffer = [];
+            }
+        }
+
+        if ($buffer !== []) {
+            $rows[] = $buffer;
+        }
+
         return [
-            'keyboard' => [
-                [
-                    [
-                        'text' => '🌤 آب‌وهوا',
-                    ],
-                    [
-                        'text' => '🌍 کشورها',
-                    ],
-                ],
-                [
-                    [
-                        'text' => '💱 نرخ ارز',
-                    ],
-                    [
-                        'text' => '⏰ یادآورها',
-                    ],
-                ],
-                [
-                    [
-                        'text' => '🧮 ماشین حساب',
-                    ],
-                    [
-                        'text' => '🧰 ابزارها',
-                    ],
-                ],
-                [
-                    [
-                        'text' => '⚙️ تنظیمات',
-                    ],
-                    [
-                        'text' => 'ℹ️ راهنما',
-                    ],
-                ],
-                [
-                    [
-                        'text' => '🐶 سگ',
-                    ],
-                    [
-                        'text' => '🐱 گربه',
-                    ],
-                    [
-                        'text' => '🦊 روباه',
-                    ],
-                ],
-            ],
+            'keyboard' => $rows,
             'resize_keyboard' => true,
             'one_time_keyboard' => false,
             'input_field_placeholder' =>
@@ -226,8 +227,98 @@ final class CoreModule implements ModuleInterface
     /**
      * @return list<string>
      */
-    private function comingSoonButtons(): array
-    {
-        return [];
+    private function menuOrder(
+        MessageContext $context
+    ): array {
+        $default = [
+            'weather',
+            'countries',
+            'currency',
+            'reminders',
+            'calculator',
+            'tools',
+            'developer',
+            'wiki',
+            'github',
+            'profile',
+            'settings',
+            'animals',
+            'help',
+        ];
+
+        if ($this->preferences === null) {
+            return $default;
+        }
+
+        $stored = $this->preferences->get(
+            $context->actorKey(),
+            'menu_order'
+        );
+
+        if ($stored === null || trim($stored) === '') {
+            return $default;
+        }
+
+        $items = array_values(
+            array_unique(
+                array_filter(
+                    array_map(
+                        'trim',
+                        explode(',', $stored)
+                    )
+                )
+            )
+        );
+
+        foreach ($default as $item) {
+            if (!in_array($item, $items, true)) {
+                $items[] = $item;
+            }
+        }
+
+        return array_values(
+            array_filter(
+                $items,
+                fn (string $item): bool =>
+                    in_array($item, $default, true)
+            )
+        );
+    }
+
+    /**
+     * @return array{text: string}|null
+     */
+    private function menuButton(
+        string $item
+    ): ?array {
+        $text = match ($item) {
+            'weather' => '🌤 آب‌وهوا',
+            'countries' => '🌍 کشورها',
+            'currency' => '💱 نرخ ارز',
+            'reminders' => '⏰ یادآورها',
+            'calculator' => '🧮 ماشین حساب',
+            'tools' => '🧰 ابزارها',
+            'developer' => '🧑‍💻 توسعه‌دهنده',
+            'wiki' => '📚 ویکی‌پدیا',
+            'github' => '🐙 GitHub',
+            'profile' => '👤 پروفایل',
+            'settings' => '⚙️ تنظیمات',
+            'help' => 'ℹ️ راهنما',
+            default => null,
+        };
+
+        return $text !== null
+            ? ['text' => $text]
+            : null;
+    }
+
+    private function english(
+        MessageContext $context
+    ): bool {
+        return $this->preferences?->get(
+            $context->actorKey(),
+            'output_language',
+            'fa'
+        ) === 'en';
     }
 }

@@ -120,9 +120,9 @@ return [
                 'description' => 'Callback query routing foundation.',
             ],
             'inline_routing' => [
-                'enabled' => false,
+                'enabled' => true,
                 'rollout_percentage' => 100,
-                'description' => 'Inline mode handlers; enabled in release one.',
+                'description' => 'Inline mode handlers for weather, currency, countries, calculator, Wikipedia, and GitHub.',
             ],
         ],
     ],
@@ -233,6 +233,76 @@ return [
                 'max_delivery_attempts' => 3,
                 'retry_base_seconds' => 60,
                 'stale_lock_seconds' => 600,
+            ],
+        ],
+
+
+        'profile' => [
+            'enabled' => true,
+            'max_favorites' => 50,
+            'max_shortcuts' => 30,
+
+            'rate_limit' => [
+                'max_attempts' => 60,
+                'window_seconds' => 60,
+            ],
+        ],
+
+        'wiki' => [
+            'enabled' => true,
+            'search_cache_ttl' => 21600,
+            'random_cache_ttl' => 300,
+            'today_cache_ttl' => 21600,
+            'max_query_length' => 150,
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+        ],
+
+        'github' => [
+            'enabled' => true,
+
+            /*
+             * Token اختیاری است و فقط باید در config/local.php
+             * قرار گیرد. حالت بدون Token نیز کار می‌کند.
+             */
+            'token' => '',
+            'api_version' => '2026-03-10',
+            'cache_ttl' => 1800,
+            'release_cache_ttl' => 900,
+            'max_watches_per_user' => 20,
+            'watch_scan_interval_seconds' => 900,
+            'watch_scan_batch_size' => 20,
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+        ],
+
+        'developer' => [
+            'enabled' => true,
+            'max_input_length' => 3000,
+            'max_regex_pattern_length' => 300,
+            'regex_backtrack_limit' => 100000,
+
+            'rate_limit' => [
+                'max_attempts' => 60,
+                'window_seconds' => 60,
+            ],
+        ],
+
+        'inline' => [
+            'enabled' => true,
+            'cache_time' => 60,
+            'max_results' => 5,
+            'weather_cache_ttl' => 600,
+
+            'rate_limit' => [
+                'max_attempts' => 40,
+                'window_seconds' => 60,
             ],
         ],
 

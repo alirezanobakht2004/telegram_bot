@@ -6,12 +6,17 @@ use SmartToolbox\Core\AnalyticsMaintenance;
 use SmartToolbox\Core\Database;
 use SmartToolbox\Core\DeadLetterQueue;
 use SmartToolbox\Core\FeatureRegistry;
+use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\JobLock;
 use SmartToolbox\Core\JobQueue;
 use SmartToolbox\Core\JobRunner;
 use SmartToolbox\Core\RuntimeSettings;
+use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\TemporaryFileManager;
 use SmartToolbox\Core\UsageTracker;
+use SmartToolbox\Modules\GitHub\GitHubClient;
+use SmartToolbox\Modules\GitHub\GitHubReleaseWatchService;
+use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
 
 $rootPath = dirname(__DIR__);
 
@@ -133,6 +138,76 @@ try {
         }
     );
 
+    $githubClient = new GitHubClient(
+        cache: new FileCache(
+            (string) $config->get(
+                'paths.cache'
+            ) . '/api'
+        ),
+        userAgent: (string) $config->get(
+            'http.user_agent',
+            'SmartToolboxFaBot/1.0'
+        ),
+        token: (string) $config->get(
+            'modules.github.token',
+            ''
+        ),
+        apiVersion: (string) $runtime->get(
+            'modules.github.api_version',
+            '2026-03-10'
+        ),
+        cacheTtl: (int) $runtime->get(
+            'modules.github.cache_ttl',
+            1800
+        ),
+        releaseCacheTtl: (int) $runtime->get(
+            'modules.github.release_cache_ttl',
+            900
+        ),
+        connectTimeout: (int) $runtime->get(
+            'http.connect_timeout',
+            4
+        ),
+        timeout: (int) $runtime->get(
+            'http.timeout',
+            8
+        ),
+        maxResponseBytes: (int) $runtime->get(
+            'http.max_response_bytes',
+            1048576
+        )
+    );
+
+    $releaseWatchService =
+        new GitHubReleaseWatchService(
+            client: $githubClient,
+            repository:
+                new GitHubWatchRepository($pdo),
+            telegram: new TelegramClient(
+                (string) $config->get(
+                    'telegram.token'
+                )
+            ),
+            logFile: (string) $config->get(
+                'paths.logs'
+            ) . '/github.log'
+        );
+
+    $runner->register(
+        'github.release_watch.scan',
+        static function () use (
+            $releaseWatchService,
+            $runtime
+        ): void {
+            $releaseWatchService->scan(
+                (int) $runtime->get(
+                    'modules.github.watch_scan_batch_size',
+                    20
+                )
+            );
+        }
+    );
+
     $runner->register(
         'temporary.cleanup',
         static function () use (
@@ -163,6 +238,34 @@ try {
         uniqueKey: 'maintenance:analytics:'
             . date('Y-m-d')
     );
+
+    if (
+        (bool) $runtime->get(
+            'modules.github.enabled',
+            true
+        )
+    ) {
+        $watchInterval = max(
+            300,
+            (int) $runtime->get(
+                'modules.github.watch_scan_interval_seconds',
+                900
+            )
+        );
+
+        $queue->enqueue(
+            jobType:
+                'github.release_watch.scan',
+            maxAttempts:
+                $defaultMaxAttempts,
+            uniqueKey:
+                'github-release-watch:'
+                . intdiv(
+                    time(),
+                    $watchInterval
+                )
+        );
+    }
 
     $queue->enqueue(
         jobType: 'temporary.cleanup',

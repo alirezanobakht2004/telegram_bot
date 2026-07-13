@@ -410,6 +410,160 @@ final class AdminSettingRegistry
                 1000
             ),
             ...$this->module(
+                'profile',
+                'پروفایل و میان‌برها',
+                [
+                    'max_favorites' =>
+                        $this->integer(
+                            'حداکثر علاقه‌مندی',
+                            1,
+                            500,
+                            'مورد برای هر کاربر'
+                        ),
+                    'max_shortcuts' =>
+                        $this->integer(
+                            'حداکثر میان‌بر',
+                            1,
+                            200,
+                            'میان‌بر برای هر کاربر'
+                        ),
+                ],
+                1000
+            ),
+            ...$this->module(
+                'wiki',
+                'ویکی‌پدیا',
+                [
+                    'search_cache_ttl' =>
+                        $this->integer(
+                            'TTL جست‌وجو',
+                            60,
+                            2592000,
+                            'ثانیه'
+                        ),
+                    'random_cache_ttl' =>
+                        $this->integer(
+                            'TTL مقاله تصادفی',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'today_cache_ttl' =>
+                        $this->integer(
+                            'TTL رویدادهای تاریخی',
+                            300,
+                            2592000,
+                            'ثانیه'
+                        ),
+                    'max_query_length' =>
+                        $this->integer(
+                            'حداکثر طول جست‌وجو',
+                            20,
+                            500,
+                            'کاراکتر'
+                        ),
+                ],
+                1000
+            ),
+            ...$this->module(
+                'github',
+                'GitHub',
+                [
+                    'cache_ttl' =>
+                        $this->integer(
+                            'TTL مخزن و Issue',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'release_cache_ttl' =>
+                        $this->integer(
+                            'TTL Release',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'max_watches_per_user' =>
+                        $this->integer(
+                            'حداکثر Release Watch',
+                            1,
+                            200,
+                            'مخزن برای هر کاربر'
+                        ),
+                    'watch_scan_interval_seconds' =>
+                        $this->integer(
+                            'فاصله بررسی Release',
+                            300,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'watch_scan_batch_size' =>
+                        $this->integer(
+                            'Batch بررسی Release',
+                            1,
+                            100,
+                            'Watch در هر Job'
+                        ),
+                ],
+                1000
+            ),
+            ...$this->module(
+                'developer',
+                'ابزارهای توسعه‌دهندگان',
+                [
+                    'max_input_length' =>
+                        $this->integer(
+                            'حداکثر طول ورودی',
+                            100,
+                            3900,
+                            'کاراکتر'
+                        ),
+                    'max_regex_pattern_length' =>
+                        $this->integer(
+                            'حداکثر طول Regex',
+                            20,
+                            1000,
+                            'کاراکتر'
+                        ),
+                    'regex_backtrack_limit' =>
+                        $this->integer(
+                            'سقف Backtracking',
+                            10000,
+                            1000000,
+                            'گام PCRE'
+                        ),
+                ],
+                2000
+            ),
+            ...$this->module(
+                'inline',
+                'Inline Mode',
+                [
+                    'cache_time' =>
+                        $this->integer(
+                            'Cache Time پاسخ Inline',
+                            1,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'max_results' =>
+                        $this->integer(
+                            'حداکثر نتیجه Wiki',
+                            1,
+                            10,
+                            'نتیجه'
+                        ),
+                    'weather_cache_ttl' =>
+                        $this->integer(
+                            'TTL آب‌وهوای Inline',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                ],
+                2000
+            ),
+            ...$this->module(
                 'calculator',
                 'ماشین حساب',
                 [

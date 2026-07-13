@@ -21,6 +21,7 @@
         "check": "php scripts/check.php",
         "jobs:process": "php scripts/process_jobs.php",
         "migrate": "php scripts/migrate.php",
+        "release-one:test": "php scripts/test_release_one.php",
         "reminders:process": "php scripts/process_reminders.php",
         "reminders:test": "php scripts/test_reminders.php",
         "telegram:get-me": "php scripts/get_me.php",
