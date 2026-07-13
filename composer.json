@@ -35,6 +35,10 @@
         "telegram:set-menu-button": "php scripts/set_menu_button.php",
         "telegram:set-webhook": "php scripts/set_webhook.php",
         "telegram:webhook-info": "php scripts/get_webhook_info.php",
+        "v1:announce": "php scripts/announce_v1_0_0.php --send-all",
+        "v1:create-announcement": "php scripts/announce_v1_0_0.php --create-only",
+        "v1:preview": "php scripts/announce_v1_0_0.php --dry-run",
+        "v1:test": "php scripts/test_v1_0_0.php",
         "v2:test": "php scripts/test_v2_foundation.php"
     },
     "config": {

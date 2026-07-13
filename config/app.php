@@ -5,9 +5,18 @@ declare(strict_types=1);
 return [
     'app' => [
         'name' => 'جعبه ابزار',
+        'version' => '1.0.0',
+        'release_channel' => 'stable',
         'environment' => 'production',
         'debug' => false,
         'timezone' => 'Asia/Tehran',
+    ],
+
+    'release' => [
+        'version' => '1.0.0',
+        'name' => 'Smart Toolbox v1.0.0',
+        'released_at' => '2026-07-13',
+        'announcement_pause_ms' => 1000,
     ],
 
     'telegram' => [
@@ -44,7 +53,7 @@ return [
     ],
 
     'http' => [
-        'user_agent' => 'SmartToolboxFaBot/1.0',
+        'user_agent' => 'SmartToolboxFaBot/1.0.0',
         'connect_timeout' => 4,
         'timeout' => 8,
         'max_response_bytes' => 1048576,

@@ -1,0 +1,102 @@
+<?php
+
+declare(strict_types=1);
+
+namespace SmartToolbox\Release;
+
+final class V100LaunchMessage
+{
+    public const VERSION = '1.0.0';
+
+    public static function text(): string
+    {
+        return <<<'TEXT'
+🎉 نسخه 1.0.0 «جعبه ابزار» منتشر شد!
+
+برای فعال‌شدن منوی تازه و دسترسی سریع به همه امکانات، همین حالا روی /start بزنید.
+
+🧰 راهنمای سریع قابلیت‌ها:
+
+🌤 آب‌وهوا و کشورها
+/weather Tehran
+/country Japan
+/currency 100 USD EUR
+
+⏰ یادآورها، هشدارها و اشتراک‌ها
+/remind 10m خرید شیر
+/alert weather Tehran rain
+/subscribe weather Tehran daily 08:00
+/alerts
+/subscriptions
+
+📡 مانیتورینگ سایت و شبکه
+/status https://example.com
+/monitor https://example.com 5m
+/ssl example.com
+/dns example.com
+/headers https://example.com
+
+📚 دانش و برنامه‌نویسی
+/wiki PHP
+/randomwiki
+/github php/php-src
+/release owner/repository
+/issues owner/repository
+/watchrelease owner/repository
+/json، /regex، /base64، /jwtdecode، /uuid، /hash و ابزارهای توسعه‌دهندگان
+
+👤 امکانات شخصی
+/favorite weather Tehran
+/favorites
+/setshortcut officeweather weather Tehran
+/shortcuts
+/history
+/profile
+/settings
+
+📁 فایل و تصویر
+روی فایل یا تصویر Reply کنید:
+/fileinfo
+/filehash
+/removeexif
+/resize 800
+/compress 70
+/towebp
+/tojpeg
+/pdftext
+همچنین: /qr، /totxt، /tojson، /tocsv
+
+🎯 مسابقه و امتیاز
+/quiz
+/trivia
+/mathgame
+/wordgame
+/dailychallenge
+/leaderboard
+/myscore
+/achievements
+/streak
+
+🛡 مدیریت حرفه‌ای گروه
+/warn، /mute، /ban، /purge
+/antispam، /antilink، /badwords، /captcha
+/rules، /setwelcome، /invitelink، /joinrequests
+ربات برای این قابلیت‌ها باید Administrator گروه باشد.
+
+📱 اپ گرافیکی کاربران
+/app
+مدیریت یادآورها، هشدارها، اشتراک‌ها، مانیتورها، علاقه‌مندی‌ها، میان‌برها، آزمون و تنظیمات در Mini App.
+
+⚡ استفاده Inline در هر چت:
+@SmartToolboxFaBot weather Tehran
+@SmartToolboxFaBot calc 2*(8+3)
+@SmartToolboxFaBot wiki PHP
+@SmartToolboxFaBot github php/php-src
+
+برای راهنمای کامل:
+/help
+
+نسخه 1.0.0 پایدار، رایگان و آماده استفاده است. 🌟
+TEXT;
+    }
+}

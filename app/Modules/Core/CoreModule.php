@@ -9,6 +9,7 @@ use SmartToolbox\Core\CommandRouter;
 use SmartToolbox\Core\MessageContext;
 use SmartToolbox\Core\ModuleInterface;
 use SmartToolbox\Core\UserPreferenceStore;
+use SmartToolbox\Release\V100LaunchMessage;
 
 final class CoreModule implements ModuleInterface
 {
@@ -23,6 +24,18 @@ final class CoreModule implements ModuleInterface
             'start',
             function (MessageContext $context): void {
                 $this->start($context);
+            }
+        );
+
+        $router->command(
+            'version',
+            function (MessageContext $context): void {
+                $context->reply(
+                    "🧰 جعبه ابزار نسخه "
+                    . V100LaunchMessage::VERSION
+                    . "\n\n"
+                    . "نسخه پایدار عمومی با Mini App، مسابقه، ابزارهای فایل، مدیریت گروه، هشدارها، مانیتورینگ و تمام قابلیت‌های اصلی."
+                );
             }
         );
 
@@ -96,8 +109,13 @@ final class CoreModule implements ModuleInterface
             $greeting . "\n\n"
             . (
                 $english
-                    ? "Welcome to Smart Toolbox.\n\nChoose a tool from the menu."
-                    : "به جعبه ابزار خوش آمدی.\n\nیکی از ابزارهای منو را انتخاب کن."
+                    ? "Welcome to Smart Toolbox v"
+                        . V100LaunchMessage::VERSION
+                        . ".\n\nUse the refreshed menu or /help to explore every tool."
+                    : "به جعبه ابزار نسخه "
+                        . V100LaunchMessage::VERSION
+                        . " خوش آمدی. 🎉\n\n"
+                        . "منوی تازه فعال شد؛ یکی از ابزارها را انتخاب کن یا برای راهنمای کامل /help را بزن."
             ),
             $options
         );
@@ -117,9 +135,13 @@ final class CoreModule implements ModuleInterface
 
         $context->reply(
             $english
-                ? "🧰 Smart Toolbox\n\n"
+                ? "🧰 Smart Toolbox v"
+                    . V100LaunchMessage::VERSION
+                    . "\n\n"
                     . "Weather, countries, currencies, reminders, calculator, Wikipedia, GitHub, developer utilities, favorites, shortcuts and personal settings."
-                : "🧰 منوی اصلی جعبه ابزار\n\n"
+                : "🧰 جعبه ابزار نسخه "
+                    . V100LaunchMessage::VERSION
+                    . "\n\n"
                     . "🌤 آب‌وهوا و پیش‌بینی\n"
                     . "🌍 اطلاعات کشورها\n"
                     . "💱 تبدیل ارز رسمی\n"
@@ -142,7 +164,10 @@ final class CoreModule implements ModuleInterface
         MessageContext $context
     ): void {
         $context->reply(
-            "ℹ️ راهنمای جعبه ابزار\n\n"
+            "ℹ️ راهنمای جعبه ابزار نسخه "
+            . V100LaunchMessage::VERSION
+            . "\n\n"
+            . "/version — نسخه ربات\n"
             . "/weather Tehran — آب‌وهوا\n"
             . "/country Iran — کشور\n"
             . "/currency 100 USD EUR — ارز\n"
