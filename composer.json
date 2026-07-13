@@ -4,13 +4,14 @@
     "type": "project",
     "license": "proprietary",
     "require": {
-        "php": "^8.4",
+        "endroid/qr-code": "^6.1.3",
         "ext-curl": "*",
         "ext-json": "*",
         "ext-mbstring": "*",
         "ext-openssl": "*",
         "ext-pdo": "*",
-        "ext-pdo_sqlite": "*"
+        "ext-pdo_sqlite": "*",
+        "php": "^8.4"
     },
     "autoload": {
         "psr-4": {
@@ -19,8 +20,10 @@
     },
     "scripts": {
         "check": "php scripts/check.php",
+        "files:capabilities": "php scripts/check_file_capabilities.php",
         "jobs:process": "php scripts/process_jobs.php",
         "migrate": "php scripts/migrate.php",
+        "release-four:test": "php scripts/test_release_four.php",
         "release-one:test": "php scripts/test_release_one.php",
         "release-three:test": "php scripts/test_release_three.php",
         "release-two:test": "php scripts/test_release_two.php",

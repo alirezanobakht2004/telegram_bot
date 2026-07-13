@@ -30,6 +30,15 @@ use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\GitHub\GitHubClient;
 use SmartToolbox\Modules\GitHub\GitHubReleaseWatchService;
 use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
+use SmartToolbox\Modules\FileTools\FileCapabilities;
+use SmartToolbox\Modules\FileTools\FileInfoInspector;
+use SmartToolbox\Modules\FileTools\FileJobRepository;
+use SmartToolbox\Modules\FileTools\FileJobWorker;
+use SmartToolbox\Modules\FileTools\ImageProcessor;
+use SmartToolbox\Modules\FileTools\PdfTextExtractor;
+use SmartToolbox\Modules\FileTools\ProcessRunner;
+use SmartToolbox\Modules\FileTools\QrCodeProcessor;
+use SmartToolbox\Modules\FileTools\TextFileProcessor;
 use SmartToolbox\Modules\GroupManagement\GroupModerationService;
 use SmartToolbox\Modules\GroupManagement\GroupRepository;
 use SmartToolbox\Modules\GroupManagement\GroupWorker;
@@ -182,6 +191,152 @@ try {
         logFile: (string) $config->get(
             'paths.logs'
         ) . '/jobs.log'
+    );
+
+    $fileCapabilities = new FileCapabilities(
+        pdo: $pdo,
+        pdftotextPath: (string) $runtime->get(
+            'modules.file_tools.binaries.pdftotext',
+            ''
+        ),
+        pdfinfoPath: (string) $runtime->get(
+            'modules.file_tools.binaries.pdfinfo',
+            ''
+        )
+    );
+
+    $fileProcessRunner = new ProcessRunner();
+
+    $fileInspector = new FileInfoInspector(
+        capabilities: $fileCapabilities,
+        processRunner: $fileProcessRunner,
+        maxPdfPages: (int) $runtime->get(
+            'modules.file_tools.max_pdf_pages',
+            20
+        )
+    );
+
+    $fileJobRepository = new FileJobRepository(
+        pdo: $pdo,
+        queue: $queue,
+        maxActivePerUser: (int) $runtime->get(
+            'modules.file_tools.max_active_per_user',
+            1
+        ),
+        maxGlobalProcessing: (int) $runtime->get(
+            'modules.file_tools.max_global_processing',
+            2
+        ),
+        defaultMaxAttempts: (int) $runtime->get(
+            'modules.file_tools.worker.max_attempts',
+            3
+        ),
+        staleProcessingSeconds: (int) $runtime->get(
+            'modules.file_tools.stale_processing_seconds',
+            600
+        )
+    );
+
+    $fileJobWorker = new FileJobWorker(
+        jobs: $fileJobRepository,
+        telegram: $telegram,
+        temporaryFiles: new TemporaryFileManager(
+            (string) $config->get(
+                'paths.temporary'
+            ) . '/file-tools'
+        ),
+        capabilities: $fileCapabilities,
+        inspector: $fileInspector,
+        images: new ImageProcessor(
+            capabilities: $fileCapabilities,
+            maxPixels: (int) $runtime->get(
+                'modules.file_tools.max_image_pixels',
+                12000000
+            ),
+            defaultQuality: (int) $runtime->get(
+                'modules.file_tools.default_image_quality',
+                78
+            )
+        ),
+        pdfText: new PdfTextExtractor(
+            capabilities: $fileCapabilities,
+            processRunner: $fileProcessRunner,
+            inspector: $fileInspector,
+            maxPages: (int) $runtime->get(
+                'modules.file_tools.max_pdf_pages',
+                20
+            ),
+            maxTextBytes: (int) $runtime->get(
+                'modules.file_tools.max_extracted_text_bytes',
+                512000
+            )
+        ),
+        textFiles: new TextFileProcessor(
+            (int) $runtime->get(
+                'modules.file_tools.max_extracted_text_bytes',
+                512000
+            )
+        ),
+        qrCodes: new QrCodeProcessor(
+            capabilities: $fileCapabilities,
+            maxTextLength: (int) $runtime->get(
+                'modules.file_tools.max_qr_text_length',
+                1500
+            ),
+            defaultSize: (int) $runtime->get(
+                'modules.file_tools.qr_default_size',
+                700
+            )
+        ),
+        maxFileBytes: (int) $runtime->get(
+            'modules.file_tools.max_file_bytes',
+            10485760
+        ),
+        maxImagePixels: (int) $runtime->get(
+            'modules.file_tools.max_image_pixels',
+            12000000
+        ),
+        timeoutSeconds: (int) $runtime->get(
+            'modules.file_tools.job_timeout_seconds',
+            45
+        ),
+        logFile: (string) $config->get(
+            'paths.logs'
+        ) . '/file_tools.log'
+    );
+
+    $runner->register(
+        'file_tools.process',
+        static function (array $payload) use (
+            $fileJobWorker
+        ): void {
+            $fileJobId = (int) (
+                $payload['file_job_id'] ?? 0
+            );
+
+            if ($fileJobId <= 0) {
+                throw new RuntimeException(
+                    'file_job_id is missing.'
+                );
+            }
+
+            $fileJobWorker->process($fileJobId);
+        }
+    );
+
+    $runner->register(
+        'file_tools.cleanup',
+        static function () use (
+            $fileJobRepository,
+            $runtime
+        ): void {
+            $fileJobRepository->cleanup(
+                (int) $runtime->get(
+                    'modules.file_tools.retention_days',
+                    30
+                )
+            );
+        }
     );
 
     $groupRepository = new GroupRepository(
@@ -662,6 +817,21 @@ try {
                     time(),
                     $groupInterval
                 )
+        );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.file_tools.enabled',
+            true
+        )
+        && $features->isEnabled('file_tools')
+    ) {
+        $queue->enqueue(
+            jobType: 'file_tools.cleanup',
+            maxAttempts: $defaultMaxAttempts,
+            uniqueKey: 'file-tools-cleanup:'
+                . date('Y-m-d')
         );
     }
 

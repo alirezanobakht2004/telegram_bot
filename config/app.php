@@ -144,6 +144,11 @@ return [
                 'rollout_percentage' => 100,
                 'description' => 'Professional group moderation, anti-spam, captcha and join request management.',
             ],
+            'file_tools' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Queued file, image, PDF and text conversion tools.',
+            ],
         ],
     ],
 
@@ -352,6 +357,39 @@ return [
 
             'rate_limit' => [
                 'max_attempts' => 40,
+                'window_seconds' => 60,
+            ],
+        ],
+
+        'file_tools' => [
+            'enabled' => true,
+
+            'max_file_bytes' => 10485760,
+            'max_image_pixels' => 12000000,
+            'max_pdf_pages' => 20,
+            'max_extracted_text_bytes' => 512000,
+            'max_text_input_bytes' => 512000,
+            'max_qr_text_length' => 1500,
+
+            'max_active_per_user' => 1,
+            'max_global_processing' => 2,
+            'job_timeout_seconds' => 45,
+            'stale_processing_seconds' => 600,
+            'retention_days' => 30,
+            'default_image_quality' => 78,
+            'qr_default_size' => 700,
+
+            'worker' => [
+                'max_attempts' => 3,
+            ],
+
+            'binaries' => [
+                'pdftotext' => '',
+                'pdfinfo' => '',
+            ],
+
+            'rate_limit' => [
+                'max_attempts' => 30,
                 'window_seconds' => 60,
             ],
         ],

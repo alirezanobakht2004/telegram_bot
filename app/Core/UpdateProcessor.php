@@ -188,7 +188,9 @@ final class UpdateProcessor
             return true;
         }
 
-        $text = $message['text'] ?? null;
+        $text = $message['text']
+            ?? $message['caption']
+            ?? null;
 
         if (!is_string($text)) {
             return false;

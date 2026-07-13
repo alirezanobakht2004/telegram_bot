@@ -14,6 +14,7 @@ use SmartToolbox\Core\FeatureRegistry;
 use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\HttpClient;
 use SmartToolbox\Core\InlineQueryRouter;
+use SmartToolbox\Core\JobQueue;
 use SmartToolbox\Core\RateLimiter;
 use SmartToolbox\Core\RuntimeSettings;
 use SmartToolbox\Core\SsrfGuard;
@@ -43,6 +44,10 @@ use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\GitHub\GitHubClient;
 use SmartToolbox\Modules\GitHub\GitHubModule;
 use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
+use SmartToolbox\Modules\FileTools\FileCapabilities;
+use SmartToolbox\Modules\FileTools\FileJobRepository;
+use SmartToolbox\Modules\FileTools\FileReferenceExtractor;
+use SmartToolbox\Modules\FileTools\FileToolsModule;
 use SmartToolbox\Modules\GroupManagement\GroupAuthorization;
 use SmartToolbox\Modules\GroupManagement\GroupAutomationListener;
 use SmartToolbox\Modules\GroupManagement\GroupDurationParser;
@@ -321,6 +326,39 @@ try {
     );
 
     $rateLimiter = new RateLimiter($pdo);
+
+    $fileCapabilities = new FileCapabilities(
+        pdo: $pdo,
+        pdftotextPath: (string) $runtime->get(
+            'modules.file_tools.binaries.pdftotext',
+            ''
+        ),
+        pdfinfoPath: (string) $runtime->get(
+            'modules.file_tools.binaries.pdfinfo',
+            ''
+        )
+    );
+
+    $fileJobs = new FileJobRepository(
+        pdo: $pdo,
+        queue: new JobQueue($pdo),
+        maxActivePerUser: (int) $runtime->get(
+            'modules.file_tools.max_active_per_user',
+            1
+        ),
+        maxGlobalProcessing: (int) $runtime->get(
+            'modules.file_tools.max_global_processing',
+            2
+        ),
+        defaultMaxAttempts: (int) $runtime->get(
+            'modules.file_tools.worker.max_attempts',
+            3
+        ),
+        staleProcessingSeconds: (int) $runtime->get(
+            'modules.file_tools.stale_processing_seconds',
+            600
+        )
+    );
 
     /*
      * تمام ماژول‌های مرحله‌ای از یک Store مشترک استفاده می‌کنند.
@@ -954,6 +992,45 @@ try {
         $profileModule->registerCallbacks(
             $callbackRouter
         );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.file_tools.enabled',
+            true
+        )
+        && $features->isEnabled('file_tools')
+    ) {
+        (new FileToolsModule(
+            jobs: $fileJobs,
+            files: new FileReferenceExtractor(),
+            capabilities: $fileCapabilities,
+            rateLimiter: $rateLimiter,
+            maxFileBytes: (int) $runtime->get(
+                'modules.file_tools.max_file_bytes',
+                10485760
+            ),
+            maxImagePixels: (int) $runtime->get(
+                'modules.file_tools.max_image_pixels',
+                12000000
+            ),
+            maxTextBytes: (int) $runtime->get(
+                'modules.file_tools.max_text_input_bytes',
+                512000
+            ),
+            maxQrTextLength: (int) $runtime->get(
+                'modules.file_tools.max_qr_text_length',
+                1500
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.file_tools.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.file_tools.rate_limit.window_seconds',
+                60
+            )
+        ))->register($router);
     }
 
     if (

@@ -538,6 +538,7 @@ final class ProfileModule implements ModuleInterface
             'reminders',
             'alerts',
             'monitoring',
+            'file_tools',
             'calculator',
             'tools',
             'developer',
@@ -572,7 +573,7 @@ final class ProfileModule implements ModuleInterface
             $context->reply(
                 "ترتیب منو را با نام‌های انگلیسی و کاما بفرست.\n\n"
                 . "نمونه:\n"
-                . "/setmenu weather,currency,reminders,alerts,monitoring,wiki,github,developer,profile,tools,settings,animals,help"
+                . "/setmenu weather,currency,reminders,alerts,monitoring,file_tools,wiki,github,developer,profile,tools,settings,animals,help"
             );
             return;
         }

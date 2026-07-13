@@ -619,6 +619,111 @@ final class AdminSettingRegistry
                 2000
             ),
             ...$this->module(
+                'file_tools',
+                'ابزارهای فایل و تصویر',
+                [
+                    'max_file_bytes' =>
+                        $this->integer(
+                            'حداکثر اندازه فایل',
+                            1048576,
+                            10485760,
+                            'بایت'
+                        ),
+                    'max_image_pixels' =>
+                        $this->integer(
+                            'حداکثر پیکسل تصویر',
+                            1000000,
+                            12000000,
+                            'پیکسل'
+                        ),
+                    'max_pdf_pages' =>
+                        $this->integer(
+                            'حداکثر صفحات PDF',
+                            1,
+                            20,
+                            'صفحه'
+                        ),
+                    'max_extracted_text_bytes' =>
+                        $this->integer(
+                            'حداکثر متن استخراجی',
+                            10240,
+                            512000,
+                            'بایت'
+                        ),
+                    'max_text_input_bytes' =>
+                        $this->integer(
+                            'حداکثر متن ورودی',
+                            10240,
+                            512000,
+                            'بایت'
+                        ),
+                    'max_qr_text_length' =>
+                        $this->integer(
+                            'حداکثر طول متن QR',
+                            50,
+                            3000,
+                            'کاراکتر'
+                        ),
+                    'max_active_per_user' =>
+                        $this->integer(
+                            'Job فعال هر کاربر',
+                            1,
+                            1,
+                            'Job'
+                        ),
+                    'max_global_processing' =>
+                        $this->integer(
+                            'Job هم‌زمان کل',
+                            1,
+                            2,
+                            'Job'
+                        ),
+                    'job_timeout_seconds' =>
+                        $this->integer(
+                            'Timeout هر Job',
+                            10,
+                            180,
+                            'ثانیه'
+                        ),
+                    'stale_processing_seconds' =>
+                        $this->integer(
+                            'تشخیص Job متوقف‌شده',
+                            60,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'retention_days' =>
+                        $this->integer(
+                            'نگهداری سوابق Job',
+                            1,
+                            365,
+                            'روز'
+                        ),
+                    'default_image_quality' =>
+                        $this->integer(
+                            'کیفیت پیش‌فرض تصویر',
+                            20,
+                            95,
+                            'درصد'
+                        ),
+                    'qr_default_size' =>
+                        $this->integer(
+                            'اندازه پیش‌فرض QR',
+                            250,
+                            1200,
+                            'پیکسل'
+                        ),
+                    'worker.max_attempts' =>
+                        $this->integer(
+                            'حداکثر تلاش Worker',
+                            1,
+                            10,
+                            'تلاش'
+                        ),
+                ],
+                1000
+            ),
+            ...$this->module(
                 'group_management',
                 'مدیریت حرفه‌ای گروه‌ها',
                 [
