@@ -764,6 +764,21 @@ if (
                 );
                 break;
 
+            case 'automation_status':
+                $service->setAutomationStatus(
+                    (string) ($_POST['automation_type'] ?? ''),
+                    (int) ($_POST['automation_id'] ?? 0),
+                    (string) ($_POST['automation_status'] ?? ''),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'وضعیت رکورد خودکار تغییر کرد.'
+                );
+                break;
+
             case 'cleanup_analytics':
                 $result =
                     $service->cleanupAnalytics(
@@ -989,6 +1004,7 @@ $sections = [
     'chats',
     'broadcasts',
     'reminders',
+    'automation',
     'logs',
     'system',
     'audit',
@@ -1012,7 +1028,7 @@ $csrf = $auth->csrfToken();
 $flashMessage = $consumeFlash();
 $stats = in_array(
     $section,
-    ['dashboard', 'reminders'],
+    ['dashboard', 'reminders', 'automation'],
     true
 )
     ? $service->dashboard()
@@ -1028,6 +1044,7 @@ $navigation = [
     'chats' => ['💬', 'چت‌ها'],
     'broadcasts' => ['📣', 'ارسال همگانی'],
     'reminders' => ['⏰', 'یادآورها'],
+    'automation' => ['🔔', 'هشدار و مانیتور'],
     'logs' => ['🧾', 'لاگ‌ها'],
     'system' => ['🩺', 'سیستم'],
     'audit' => ['🔎', 'Audit'],
@@ -1151,6 +1168,10 @@ $navigation = [
                 ['💬', 'چت فعال', $stats['chats_active']],
                 ['📣', 'Broadcast فعال', $stats['broadcasts_active']],
                 ['⏰', 'یادآور فعال', $stats['reminders_pending']],
+                ['🔔', 'هشدار فعال', $stats['alerts_active']],
+                ['📬', 'اشتراک فعال', $stats['subscriptions_active']],
+                ['📡', 'مانیتور فعال', $stats['monitors_active']],
+                ['❌', 'مانیتور Down', $stats['monitors_down']],
                 ['📈', 'رویداد امروز', $stats['usage_events_today']],
                 ['🧵', 'Job فعال', $stats['jobs_queued']],
                 ['💀', 'Dead Letter', $stats['dead_letters']],
@@ -2050,6 +2071,7 @@ $navigation = [
                                             value="<?= $h($item['effective']) ?>"
                                             min="<?= $h($item['min']) ?>"
                                             max="<?= $h($item['max']) ?>"
+                                            <?= $item['type'] === 'float' ? 'step="any"' : 'step="1"' ?>
                                             required
                                         >
                                     <?php endif; ?>
@@ -3175,6 +3197,241 @@ $navigation = [
                     <?php endfor; ?>
                 </div>
             </section>
+
+
+        <?php elseif ($section === 'automation'): ?>
+            <?php
+            $automation = $service->automationOverview(150);
+            $selectedMonitorId = max(
+                0,
+                (int) ($_GET['monitor_id'] ?? 0)
+            );
+            $monitorChart = $selectedMonitorId > 0
+                ? $service->monitorDailyUptime(
+                    $selectedMonitorId,
+                    30
+                )
+                : [];
+            $monitorChecks = $selectedMonitorId > 0
+                ? $service->monitorChecks(
+                    $selectedMonitorId,
+                    50
+                )
+                : [];
+            ?>
+
+            <section class="metrics">
+                <?php foreach ([
+                    ['🔔', 'هشدار فعال', $stats['alerts_active']],
+                    ['📬', 'اشتراک فعال', $stats['subscriptions_active']],
+                    ['📡', 'مانیتور فعال', $stats['monitors_active']],
+                    ['❌', 'مانیتور Down', $stats['monitors_down']],
+                ] as [$icon, $label, $value]): ?>
+                    <article class="metric-card">
+                        <span class="metric-icon"><?= $h($icon) ?></span>
+                        <div>
+                            <small><?= $h($label) ?></small>
+                            <strong><?= $number($value) ?></strong>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>هشدارهای هوشمند</h2>
+                        <p>آب‌وهوا، دما، باد و نرخ ارز</p>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>ID</th><th>کاربر</th><th>نوع</th><th>موضوع</th>
+                            <th>شرط</th><th>آخرین مقدار</th><th>وضعیت</th><th>عملیات</th>
+                        </tr></thead>
+                        <tbody>
+                        <?php foreach ($automation['alerts'] as $row): ?>
+                            <tr>
+                                <td>#<?= $h($row['id']) ?></td>
+                                <td>
+                                    <?= $h(trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? ''))) ?>
+                                    <small><?= $h($row['user_id']) ?></small>
+                                </td>
+                                <td><?= $h($row['alert_type']) ?></td>
+                                <td>
+                                    <?= $h($row['subject']) ?>
+                                    <?php if (!empty($row['secondary_subject'])): ?>
+                                        /<?= $h($row['secondary_subject']) ?>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?= $h($row['operator']) ?>
+                                    <?= $h($row['threshold_value'] ?? $row['comparison_value'] ?? '') ?>
+                                </td>
+                                <td><?= $h($row['last_observed_value'] ?? '—') ?></td>
+                                <td><span class="badge neutral"><?= $h($row['status']) ?></span></td>
+                                <td class="actions">
+                                    <?php foreach (['active' => 'فعال', 'paused' => 'توقف', 'cancelled' => 'لغو'] as $statusKey => $statusLabel): ?>
+                                        <?php if ($row['status'] !== $statusKey): ?>
+                                            <form method="post" action="<?= $h($basePath) ?>/">
+                                                <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                                <input type="hidden" name="action" value="automation_status">
+                                                <input type="hidden" name="return_section" value="automation">
+                                                <input type="hidden" name="automation_type" value="alert">
+                                                <input type="hidden" name="automation_id" value="<?= $h($row['id']) ?>">
+                                                <input type="hidden" name="automation_status" value="<?= $h($statusKey) ?>">
+                                                <button class="button small secondary" type="submit"><?= $h($statusLabel) ?></button>
+                                            </form>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>اشتراک‌های زمان‌بندی‌شده</h2>
+                        <p>گزارش‌های روزانه، هفتگی و ماهانه</p>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>ID</th><th>کاربر</th><th>نوع</th><th>موضوع</th>
+                            <th>زمان‌بندی</th><th>اجرای بعدی</th><th>وضعیت</th><th>عملیات</th>
+                        </tr></thead>
+                        <tbody>
+                        <?php foreach ($automation['subscriptions'] as $row): ?>
+                            <tr>
+                                <td>#<?= $h($row['id']) ?></td>
+                                <td><?= $h($row['first_name'] ?? '') ?><small><?= $h($row['user_id']) ?></small></td>
+                                <td><?= $h($row['subscription_type']) ?></td>
+                                <td><?= $h($row['subject']) ?></td>
+                                <td>
+                                    <?= $h($row['frequency']) ?>
+                                    <?= $h($row['schedule_time']) ?>
+                                    <small><?= $h($row['timezone']) ?></small>
+                                </td>
+                                <td><?= $h(date('Y-m-d H:i', (int) $row['next_run_at'])) ?></td>
+                                <td><span class="badge neutral"><?= $h($row['status']) ?></span></td>
+                                <td class="actions">
+                                    <?php foreach (['active' => 'فعال', 'paused' => 'توقف', 'cancelled' => 'لغو'] as $statusKey => $statusLabel): ?>
+                                        <?php if ($row['status'] !== $statusKey): ?>
+                                            <form method="post" action="<?= $h($basePath) ?>/">
+                                                <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                                <input type="hidden" name="action" value="automation_status">
+                                                <input type="hidden" name="return_section" value="automation">
+                                                <input type="hidden" name="automation_type" value="subscription">
+                                                <input type="hidden" name="automation_id" value="<?= $h($row['id']) ?>">
+                                                <input type="hidden" name="automation_status" value="<?= $h($statusKey) ?>">
+                                                <button class="button small secondary" type="submit"><?= $h($statusLabel) ?></button>
+                                            </form>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>مانیتورهای سایت</h2>
+                        <p>وضعیت، زمان پاسخ، خطا و نمودار Availability</p>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr>
+                            <th>ID</th><th>کاربر</th><th>URL</th><th>فاصله</th>
+                            <th>وضعیت فعلی</th><th>HTTP / زمان</th><th>Check</th><th>عملیات</th>
+                        </tr></thead>
+                        <tbody>
+                        <?php foreach ($automation['monitors'] as $row): ?>
+                            <tr>
+                                <td>#<?= $h($row['id']) ?></td>
+                                <td><?= $h($row['first_name'] ?? '') ?><small><?= $h($row['user_id']) ?></small></td>
+                                <td><code><?= $h($row['url']) ?></code></td>
+                                <td><?= $number((int) $row['interval_seconds']) ?>s</td>
+                                <td>
+                                    <span class="badge <?= $row['last_state'] === 'down' ? 'danger' : 'neutral' ?>">
+                                        <?= $h($row['last_state']) ?> / <?= $h($row['status']) ?>
+                                    </span>
+                                    <?php if (!empty($row['last_error'])): ?>
+                                        <small><?= $h(mb_substr((string) $row['last_error'], 0, 150)) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td><?= $h($row['last_status_code'] ?? '—') ?> / <?= $h($row['last_response_ms'] ?? '—') ?> ms</td>
+                                <td><?= $number((int) $row['checks_count']) ?></td>
+                                <td class="actions">
+                                    <a class="button small primary" href="<?= $h($basePath) ?>/?section=automation&amp;monitor_id=<?= (int) $row['id'] ?>">نمودار</a>
+                                    <?php foreach (['active' => 'فعال', 'paused' => 'توقف', 'cancelled' => 'لغو'] as $statusKey => $statusLabel): ?>
+                                        <?php if ($row['status'] !== $statusKey): ?>
+                                            <form method="post" action="<?= $h($basePath) ?>/">
+                                                <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                                <input type="hidden" name="action" value="automation_status">
+                                                <input type="hidden" name="return_section" value="automation">
+                                                <input type="hidden" name="automation_type" value="monitor">
+                                                <input type="hidden" name="automation_id" value="<?= $h($row['id']) ?>">
+                                                <input type="hidden" name="automation_status" value="<?= $h($statusKey) ?>">
+                                                <button class="button small secondary" type="submit"><?= $h($statusLabel) ?></button>
+                                            </form>
+                                        <?php endif; ?>
+                                    <?php endforeach; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <?php if ($selectedMonitorId > 0): ?>
+                <section class="panel">
+                    <h2>Availability روزانه مانیتور #<?= $selectedMonitorId ?></h2>
+                    <?php if ($monitorChart === []): ?>
+                        <div class="notice">هنوز داده‌ای ثبت نشده است.</div>
+                    <?php else: ?>
+                        <div class="activity-chart">
+                            <?php foreach ($monitorChart as $row): ?>
+                                <div class="activity-column">
+                                    <div class="bars">
+                                        <span class="bar updates h-<?= max(0, min(10, (int) round($row['uptime'] / 10))) ?>"></span>
+                                    </div>
+                                    <small><?= $h(substr($row['date'], 5)) ?></small>
+                                    <small><?= $h($row['uptime']) ?>%</small>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                    <div class="table-wrap">
+                        <table>
+                            <thead><tr><th>زمان</th><th>State</th><th>HTTP</th><th>Response</th><th>IP</th><th>خطا</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($monitorChecks as $check): ?>
+                                <tr>
+                                    <td><?= $h(date('Y-m-d H:i:s', (int) $check['checked_at'])) ?></td>
+                                    <td><?= $h($check['state']) ?></td>
+                                    <td><?= $h($check['status_code'] ?? '—') ?></td>
+                                    <td><?= $h($check['response_ms'] ?? '—') ?> ms</td>
+                                    <td><?= $h($check['primary_ip'] ?? '—') ?></td>
+                                    <td><?= $h(mb_substr((string) ($check['error_message'] ?? ''), 0, 180)) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            <?php endif; ?>
 
         <?php elseif ($section === 'logs'): ?>
             <?php

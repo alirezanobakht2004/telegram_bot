@@ -410,6 +410,215 @@ final class AdminSettingRegistry
                 1000
             ),
             ...$this->module(
+                'alerts',
+                'هشدارها و اشتراک‌ها',
+                [
+                    'max_alerts_per_user' =>
+                        $this->integer(
+                            'حداکثر هشدار هر کاربر',
+                            1,
+                            500,
+                            'هشدار'
+                        ),
+                    'max_subscriptions_per_user' =>
+                        $this->integer(
+                            'حداکثر اشتراک هر کاربر',
+                            1,
+                            200,
+                            'اشتراک'
+                        ),
+                    'check_interval_seconds' =>
+                        $this->integer(
+                            'فاصله بررسی هشدار',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'scan_batch_size' =>
+                        $this->integer(
+                            'Batch هشدار',
+                            1,
+                            100,
+                            'رکورد'
+                        ),
+                    'subscription_batch_size' =>
+                        $this->integer(
+                            'Batch اشتراک',
+                            1,
+                            100,
+                            'رکورد'
+                        ),
+                    'scan_job_interval_seconds' =>
+                        $this->integer(
+                            'فاصله Job هشدار',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'subscription_job_interval_seconds' =>
+                        $this->integer(
+                            'فاصله Job اشتراک',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'default_cooldown_seconds' =>
+                        $this->integer(
+                            'Cooldown پیش‌فرض',
+                            0,
+                            604800,
+                            'ثانیه'
+                        ),
+                    'default_hysteresis' =>
+                        $this->number(
+                            'Hysteresis پیش‌فرض',
+                            0,
+                            1000000
+                        ),
+                    'max_notifications_per_day' =>
+                        $this->integer(
+                            'حداکثر اعلان روزانه',
+                            1,
+                            100,
+                            'اعلان'
+                        ),
+                    'notification_retention_days' =>
+                        $this->integer(
+                            'نگهداری لاگ اعلان',
+                            1,
+                            3650,
+                            'روز'
+                        ),
+                    'weather_cache_ttl' =>
+                        $this->integer(
+                            'TTL داده هوا',
+                            30,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'currency_cache_ttl' =>
+                        $this->integer(
+                            'TTL نرخ ارز',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'country_cache_ttl' =>
+                        $this->integer(
+                            'TTL کشور',
+                            300,
+                            2592000,
+                            'ثانیه'
+                        ),
+                ],
+                2000
+            ),
+            ...$this->module(
+                'monitoring',
+                'مانیتورینگ سایت',
+                [
+                    'max_monitors_per_user' =>
+                        $this->integer(
+                            'حداکثر مانیتور هر کاربر',
+                            1,
+                            200,
+                            'مانیتور'
+                        ),
+                    'minimum_interval_seconds' =>
+                        $this->integer(
+                            'حداقل فاصله مانیتور',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'maximum_interval_seconds' =>
+                        $this->integer(
+                            'حداکثر فاصله مانیتور',
+                            300,
+                            2592000,
+                            'ثانیه'
+                        ),
+                    'scan_batch_size' =>
+                        $this->integer(
+                            'Batch مانیتور',
+                            1,
+                            50,
+                            'مانیتور'
+                        ),
+                    'report_batch_size' =>
+                        $this->integer(
+                            'Batch گزارش روزانه',
+                            1,
+                            50,
+                            'گزارش'
+                        ),
+                    'scan_job_interval_seconds' =>
+                        $this->integer(
+                            'فاصله Job مانیتور',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'report_job_interval_seconds' =>
+                        $this->integer(
+                            'فاصله Job گزارش',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'failure_threshold' =>
+                        $this->integer(
+                            'آستانه تشخیص Down',
+                            1,
+                            10,
+                            'خطای متوالی'
+                        ),
+                    'recovery_threshold' =>
+                        $this->integer(
+                            'آستانه تشخیص Recovery',
+                            1,
+                            10,
+                            'موفقیت متوالی'
+                        ),
+                    'retention_days' =>
+                        $this->integer(
+                            'نگهداری Checkها',
+                            1,
+                            3650,
+                            'روز'
+                        ),
+                    'http.connect_timeout' =>
+                        $this->integer(
+                            'Connect Timeout مانیتور',
+                            1,
+                            30,
+                            'ثانیه'
+                        ),
+                    'http.timeout' =>
+                        $this->integer(
+                            'Timeout مانیتور',
+                            1,
+                            60,
+                            'ثانیه'
+                        ),
+                    'http.max_response_bytes' =>
+                        $this->integer(
+                            'حداکثر حجم پاسخ مانیتور',
+                            1024,
+                            2097152,
+                            'بایت'
+                        ),
+                    'http.max_redirects' =>
+                        $this->integer(
+                            'حداکثر Redirect',
+                            0,
+                            10,
+                            'Redirect'
+                        ),
+                ],
+                2000
+            ),
+            ...$this->module(
                 'profile',
                 'پروفایل و میان‌برها',
                 [
@@ -674,7 +883,7 @@ final class AdminSettingRegistry
     public function validate(
         string $key,
         mixed $rawValue
-    ): bool|int|string {
+    ): bool|int|float|string {
         $definition = $this->definitions()[$key]
             ?? null;
 
@@ -696,6 +905,34 @@ final class AdminSettingRegistry
                     'مقدار بولی معتبر نیست.'
                 ),
             };
+        }
+
+        if ($definition['type'] === 'float') {
+            $value = is_string($rawValue)
+                ? trim($rawValue)
+                : $rawValue;
+
+            if (!is_numeric($value)) {
+                throw new InvalidArgumentException(
+                    'مقدار باید عددی باشد.'
+                );
+            }
+
+            $number = (float) $value;
+            $minimum = (float) ($definition['min'] ?? -PHP_FLOAT_MAX);
+            $maximum = (float) ($definition['max'] ?? PHP_FLOAT_MAX);
+
+            if (
+                !is_finite($number)
+                || $number < $minimum
+                || $number > $maximum
+            ) {
+                throw new InvalidArgumentException(
+                    "مقدار باید بین {$minimum} و {$maximum} باشد."
+                );
+            }
+
+            return $number;
         }
 
         if ($definition['type'] === 'int') {
@@ -825,6 +1062,30 @@ final class AdminSettingRegistry
      *     help: string
      * }
      */
+    /**
+     * @return array{
+     *     label: string,
+     *     type: string,
+     *     min: float,
+     *     max: float,
+     *     help: string
+     * }
+     */
+    private function number(
+        string $label,
+        float $minimum,
+        float $maximum,
+        string $help = 'عدد اعشاری'
+    ): array {
+        return [
+            'label' => $label,
+            'type' => 'float',
+            'min' => $minimum,
+            'max' => $maximum,
+            'help' => $help,
+        ];
+    }
+
     private function integer(
         string $label,
         int $minimum,

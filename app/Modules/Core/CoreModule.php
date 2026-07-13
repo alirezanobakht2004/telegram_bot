@@ -124,6 +124,8 @@ final class CoreModule implements ModuleInterface
                     . "🌍 اطلاعات کشورها\n"
                     . "💱 تبدیل ارز رسمی\n"
                     . "⏰ یادآورها\n"
+                    . "🔔 هشدارها و اشتراک‌ها\n"
+                    . "📡 مانیتورینگ سایت\n"
                     . "🧮 ماشین حساب و تبدیل واحد\n"
                     . "📚 ویکی‌پدیا\n"
                     . "🐙 GitHub و Release Watch\n"
@@ -150,7 +152,12 @@ final class CoreModule implements ModuleInterface
             . "/github php/php-src — مخزن GitHub\n"
             . "/release owner/repo — آخرین Release\n"
             . "/issues owner/repo — Issueهای باز\n"
-            . "/watchrelease owner/repo — هشدار Release\n\n"
+            . "/watchrelease owner/repo — هشدار Release\n"
+            . "/alert weather Tehran rain — هشدار هوشمند\n"
+            . "/subscribe weather Tehran daily 08:00 — اشتراک\n"
+            . "/monitor https://example.com 5m — مانیتور سایت\n"
+            . "/status https://example.com — بررسی فوری\n"
+            . "/ssl example.com، /dns example.com، /headers URL\n\n"
             . "/favorite weather Tehran — علاقه‌مندی\n"
             . "/favorites — فهرست علاقه‌مندی‌ها\n"
             . "/setshortcut office weather Tehran — میان‌بر\n"
@@ -235,6 +242,8 @@ final class CoreModule implements ModuleInterface
             'countries',
             'currency',
             'reminders',
+            'alerts',
+            'monitoring',
             'calculator',
             'tools',
             'developer',
@@ -296,6 +305,8 @@ final class CoreModule implements ModuleInterface
             'countries' => '🌍 کشورها',
             'currency' => '💱 نرخ ارز',
             'reminders' => '⏰ یادآورها',
+            'alerts' => '🔔 هشدارها',
+            'monitoring' => '📡 مانیتورینگ',
             'calculator' => '🧮 ماشین حساب',
             'tools' => '🧰 ابزارها',
             'developer' => '🧑‍💻 توسعه‌دهنده',

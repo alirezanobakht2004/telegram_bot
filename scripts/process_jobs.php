@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use SmartToolbox\Core\AnalyticsMaintenance;
+use SmartToolbox\Core\ApiMetricsTracker;
+use SmartToolbox\Core\CacheMetricsTracker;
 use SmartToolbox\Core\Database;
 use SmartToolbox\Core\DeadLetterQueue;
 use SmartToolbox\Core\FeatureRegistry;
@@ -10,13 +12,27 @@ use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\JobLock;
 use SmartToolbox\Core\JobQueue;
 use SmartToolbox\Core\JobRunner;
+use SmartToolbox\Core\HttpClient;
 use SmartToolbox\Core\RuntimeSettings;
+use SmartToolbox\Core\SsrfGuard;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\TemporaryFileManager;
 use SmartToolbox\Core\UsageTracker;
+use SmartToolbox\Modules\Alerts\AlertDataProvider;
+use SmartToolbox\Modules\Alerts\AlertRepository;
+use SmartToolbox\Modules\Alerts\AlertWorker;
+use SmartToolbox\Modules\Alerts\ConditionEvaluator;
+use SmartToolbox\Modules\Alerts\ScheduleCalculator;
+use SmartToolbox\Modules\Alerts\SubscriptionRepository;
+use SmartToolbox\Modules\Alerts\SubscriptionWorker;
+use SmartToolbox\Modules\Countries\CountriesDevProvider;
+use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\GitHub\GitHubClient;
 use SmartToolbox\Modules\GitHub\GitHubReleaseWatchService;
 use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
+use SmartToolbox\Modules\Monitoring\MonitorProbe;
+use SmartToolbox\Modules\Monitoring\MonitorRepository;
+use SmartToolbox\Modules\Monitoring\MonitorWorker;
 
 $rootPath = dirname(__DIR__);
 
@@ -81,6 +97,72 @@ try {
         )
     );
 
+    $apiMetrics = new ApiMetricsTracker(
+        pdo: $pdo,
+        enabled: (bool) $runtime->get(
+            'analytics.api_metrics.enabled',
+            true
+        ),
+        sampleRate: (int) $runtime->get(
+            'analytics.api_metrics.sample_rate',
+            100
+        )
+    );
+
+    $cacheMetrics = new CacheMetricsTracker(
+        pdo: $pdo,
+        enabled: (bool) $runtime->get(
+            'analytics.cache_metrics.enabled',
+            true
+        ),
+        sampleRate: (int) $runtime->get(
+            'analytics.cache_metrics.sample_rate',
+            100
+        )
+    );
+
+    $http = new HttpClient(
+        userAgent: (string) $config->get(
+            'http.user_agent',
+            'SmartToolboxFaBot/1.0'
+        ),
+        connectTimeout: (int) $runtime->get(
+            'http.connect_timeout',
+            4
+        ),
+        timeout: (int) $runtime->get(
+            'http.timeout',
+            8
+        ),
+        maxResponseBytes: (int) $runtime->get(
+            'http.max_response_bytes',
+            1048576
+        ),
+        metrics: $apiMetrics,
+        ssrfGuard: new SsrfGuard(
+            allowHttp: false,
+            allowedPorts: [443]
+        ),
+        maxRedirects: (int) $runtime->get(
+            'http.max_redirects',
+            3
+        )
+    );
+
+    $cache = new FileCache(
+        directory: (string) $config->get(
+            'paths.cache'
+        ) . '/api',
+        metrics: $cacheMetrics
+    );
+
+    $telegram = new TelegramClient(
+        token: (string) $config->get(
+            'telegram.token'
+        ),
+        metrics: $apiMetrics
+    );
+
     $queue = new JobQueue($pdo);
     $lock = new JobLock($pdo);
     $deadLetters = new DeadLetterQueue(
@@ -139,11 +221,7 @@ try {
     );
 
     $githubClient = new GitHubClient(
-        cache: new FileCache(
-            (string) $config->get(
-                'paths.cache'
-            ) . '/api'
-        ),
+        cache: $cache,
         userAgent: (string) $config->get(
             'http.user_agent',
             'SmartToolboxFaBot/1.0'
@@ -183,11 +261,7 @@ try {
             client: $githubClient,
             repository:
                 new GitHubWatchRepository($pdo),
-            telegram: new TelegramClient(
-                (string) $config->get(
-                    'telegram.token'
-                )
-            ),
+            telegram: $telegram,
             logFile: (string) $config->get(
                 'paths.logs'
             ) . '/github.log'
@@ -203,6 +277,177 @@ try {
                 (int) $runtime->get(
                     'modules.github.watch_scan_batch_size',
                     20
+                )
+            );
+        }
+    );
+
+    $scheduleCalculator = new ScheduleCalculator();
+    $alertDataProvider = new AlertDataProvider(
+        http: $http,
+        cache: $cache,
+        currency: new FrankfurterProvider(
+            http: $http,
+            baseUrl: (string) $config->get(
+                'modules.currency.provider.base_url'
+            )
+        ),
+        countries: new CountriesDevProvider(
+            http: $http,
+            baseUrl: (string) $config->get(
+                'modules.countries.provider.base_url'
+            )
+        ),
+        geocodingEndpoint: (string) $config->get(
+            'modules.weather.providers.geocoding_endpoint'
+        ),
+        forecastEndpoint: (string) $config->get(
+            'modules.weather.providers.forecast_endpoint'
+        ),
+        weatherCacheTtl: (int) $runtime->get(
+            'modules.alerts.weather_cache_ttl',
+            120
+        ),
+        currencyCacheTtl: (int) $runtime->get(
+            'modules.alerts.currency_cache_ttl',
+            900
+        ),
+        countryCacheTtl: (int) $runtime->get(
+            'modules.alerts.country_cache_ttl',
+            21600
+        )
+    );
+
+    $alertWorker = new AlertWorker(
+        repository: new AlertRepository($pdo),
+        data: $alertDataProvider,
+        evaluator: new ConditionEvaluator(),
+        telegram: $telegram,
+        logFile: (string) $config->get(
+            'paths.logs'
+        ) . '/alerts.log'
+    );
+
+    $subscriptionWorker = new SubscriptionWorker(
+        repository: new SubscriptionRepository($pdo),
+        data: $alertDataProvider,
+        schedule: $scheduleCalculator,
+        telegram: $telegram,
+        logFile: (string) $config->get(
+            'paths.logs'
+        ) . '/alerts.log'
+    );
+
+    $monitorGuard = new SsrfGuard(
+        allowHttp: true,
+        allowedPorts: (array) $runtime->get(
+            'modules.monitoring.http.allowed_ports',
+            [80, 443]
+        )
+    );
+    $monitorWorker = new MonitorWorker(
+        repository: new MonitorRepository($pdo),
+        probe: new MonitorProbe(
+            userAgent: (string) $config->get(
+                'http.user_agent',
+                'SmartToolboxFaBot/1.0'
+            ),
+            guard: $monitorGuard,
+            connectTimeout: (int) $runtime->get(
+                'modules.monitoring.http.connect_timeout',
+                4
+            ),
+            timeout: (int) $runtime->get(
+                'modules.monitoring.http.timeout',
+                8
+            ),
+            maxResponseBytes: (int) $runtime->get(
+                'modules.monitoring.http.max_response_bytes',
+                131072
+            ),
+            maxRedirects: (int) $runtime->get(
+                'modules.monitoring.http.max_redirects',
+                3
+            )
+        ),
+        schedule: $scheduleCalculator,
+        telegram: $telegram,
+        logFile: (string) $config->get(
+            'paths.logs'
+        ) . '/monitoring.log'
+    );
+
+    $runner->register(
+        'alerts.scan',
+        static function () use (
+            $alertWorker,
+            $runtime
+        ): void {
+            $alertWorker->scan(
+                (int) $runtime->get(
+                    'modules.alerts.scan_batch_size',
+                    20
+                ),
+                (int) $runtime->get(
+                    'modules.alerts.notification_retention_days',
+                    90
+                )
+            );
+        }
+    );
+
+    $runner->register(
+        'subscriptions.scan',
+        static function () use (
+            $subscriptionWorker,
+            $runtime
+        ): void {
+            $subscriptionWorker->scan(
+                (int) $runtime->get(
+                    'modules.alerts.subscription_batch_size',
+                    20
+                )
+            );
+        }
+    );
+
+    $runner->register(
+        'monitoring.scan',
+        static function () use (
+            $monitorWorker,
+            $runtime
+        ): void {
+            $monitorWorker->scan(
+                limit: (int) $runtime->get(
+                    'modules.monitoring.scan_batch_size',
+                    10
+                ),
+                failureThreshold: (int) $runtime->get(
+                    'modules.monitoring.failure_threshold',
+                    2
+                ),
+                recoveryThreshold: (int) $runtime->get(
+                    'modules.monitoring.recovery_threshold',
+                    1
+                ),
+                retentionDays: (int) $runtime->get(
+                    'modules.monitoring.retention_days',
+                    90
+                )
+            );
+        }
+    );
+
+    $runner->register(
+        'monitoring.daily_reports',
+        static function () use (
+            $monitorWorker,
+            $runtime
+        ): void {
+            $monitorWorker->dailyReports(
+                (int) $runtime->get(
+                    'modules.monitoring.report_batch_size',
+                    10
                 )
             );
         }
@@ -264,6 +509,90 @@ try {
                     time(),
                     $watchInterval
                 )
+        );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.alerts.enabled',
+            true
+        )
+    ) {
+        if ($features->isEnabled('smart_alerts')) {
+            $alertInterval = max(
+                60,
+                (int) $runtime->get(
+                    'modules.alerts.scan_job_interval_seconds',
+                    60
+                )
+            );
+
+            $queue->enqueue(
+                jobType: 'alerts.scan',
+                maxAttempts: $defaultMaxAttempts,
+                uniqueKey: 'alerts-scan:'
+                    . intdiv(time(), $alertInterval)
+            );
+        }
+
+        if (
+            $features->isEnabled(
+                'scheduled_subscriptions'
+            )
+        ) {
+            $subscriptionInterval = max(
+                60,
+                (int) $runtime->get(
+                    'modules.alerts.subscription_job_interval_seconds',
+                    60
+                )
+            );
+
+            $queue->enqueue(
+                jobType: 'subscriptions.scan',
+                maxAttempts: $defaultMaxAttempts,
+                uniqueKey: 'subscriptions-scan:'
+                    . intdiv(
+                        time(),
+                        $subscriptionInterval
+                    )
+            );
+        }
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.monitoring.enabled',
+            true
+        )
+        && $features->isEnabled('site_monitoring')
+    ) {
+        $monitorInterval = max(
+            60,
+            (int) $runtime->get(
+                'modules.monitoring.scan_job_interval_seconds',
+                60
+            )
+        );
+        $reportInterval = max(
+            60,
+            (int) $runtime->get(
+                'modules.monitoring.report_job_interval_seconds',
+                60
+            )
+        );
+
+        $queue->enqueue(
+            jobType: 'monitoring.scan',
+            maxAttempts: $defaultMaxAttempts,
+            uniqueKey: 'monitoring-scan:'
+                . intdiv(time(), $monitorInterval)
+        );
+        $queue->enqueue(
+            jobType: 'monitoring.daily_reports',
+            maxAttempts: $defaultMaxAttempts,
+            uniqueKey: 'monitoring-reports:'
+                . intdiv(time(), $reportInterval)
         );
     }
 

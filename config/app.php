@@ -124,6 +124,21 @@ return [
                 'rollout_percentage' => 100,
                 'description' => 'Inline mode handlers for weather, currency, countries, calculator, Wikipedia, and GitHub.',
             ],
+            'smart_alerts' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Weather, temperature, wind and currency smart alerts.',
+            ],
+            'scheduled_subscriptions' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Daily, weekly and monthly reports.',
+            ],
+            'site_monitoring' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'SSRF-protected website, SSL and DNS monitoring.',
+            ],
         ],
     ],
 
@@ -236,6 +251,57 @@ return [
             ],
         ],
 
+
+
+        'alerts' => [
+            'enabled' => true,
+            'max_alerts_per_user' => 30,
+            'max_subscriptions_per_user' => 20,
+            'check_interval_seconds' => 300,
+            'scan_batch_size' => 20,
+            'subscription_batch_size' => 20,
+            'scan_job_interval_seconds' => 60,
+            'subscription_job_interval_seconds' => 60,
+            'default_cooldown_seconds' => 3600,
+            'default_hysteresis' => 0.5,
+            'max_notifications_per_day' => 3,
+            'notification_retention_days' => 90,
+            'weather_cache_ttl' => 120,
+            'currency_cache_ttl' => 900,
+            'country_cache_ttl' => 21600,
+
+            'rate_limit' => [
+                'max_attempts' => 40,
+                'window_seconds' => 60,
+            ],
+        ],
+
+        'monitoring' => [
+            'enabled' => true,
+            'max_monitors_per_user' => 20,
+            'minimum_interval_seconds' => 300,
+            'maximum_interval_seconds' => 86400,
+            'scan_batch_size' => 10,
+            'report_batch_size' => 10,
+            'scan_job_interval_seconds' => 60,
+            'report_job_interval_seconds' => 60,
+            'failure_threshold' => 2,
+            'recovery_threshold' => 1,
+            'retention_days' => 90,
+
+            'http' => [
+                'connect_timeout' => 4,
+                'timeout' => 8,
+                'max_response_bytes' => 131072,
+                'max_redirects' => 3,
+                'allowed_ports' => [80, 443],
+            ],
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+        ],
 
         'profile' => [
             'enabled' => true,

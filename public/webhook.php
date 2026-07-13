@@ -22,6 +22,11 @@ use SmartToolbox\Core\UpdateProcessor;
 use SmartToolbox\Core\UsageTracker;
 use SmartToolbox\Core\UserPreferenceStore;
 use SmartToolbox\Modules\Admin\AdminModule;
+use SmartToolbox\Modules\Alerts\AlertDataProvider;
+use SmartToolbox\Modules\Alerts\AlertModule;
+use SmartToolbox\Modules\Alerts\AlertRepository;
+use SmartToolbox\Modules\Alerts\ScheduleCalculator;
+use SmartToolbox\Modules\Alerts\SubscriptionRepository;
 use SmartToolbox\Modules\Animals\AnimalsModule;
 use SmartToolbox\Modules\Calculator\CalculatorModule;
 use SmartToolbox\Modules\Calculator\ExpressionCalculator;
@@ -42,6 +47,11 @@ use SmartToolbox\Modules\Inline\InlineDataService;
 use SmartToolbox\Modules\Inline\InlineModule;
 use SmartToolbox\Modules\Inline\InlineResultFactory;
 use SmartToolbox\Modules\Inline\InlineSelectionRecorder;
+use SmartToolbox\Modules\Monitoring\DnsInspector;
+use SmartToolbox\Modules\Monitoring\MonitorModule;
+use SmartToolbox\Modules\Monitoring\MonitorProbe;
+use SmartToolbox\Modules\Monitoring\MonitorRepository;
+use SmartToolbox\Modules\Monitoring\SslInspector;
 use SmartToolbox\Modules\Profile\ProfileModule;
 use SmartToolbox\Modules\Profile\ProfileRepository;
 use SmartToolbox\Modules\Reminders\ReminderModule;
@@ -381,6 +391,76 @@ try {
     $githubWatches = new GitHubWatchRepository(
         $pdo
     );
+
+    $alertRepository = new AlertRepository($pdo);
+    $subscriptionRepository = new SubscriptionRepository($pdo);
+    $scheduleCalculator = new ScheduleCalculator();
+    $alertDataProvider = new AlertDataProvider(
+        http: $http,
+        cache: $cache,
+        currency: new FrankfurterProvider(
+            http: $http,
+            baseUrl: (string) $config->get(
+                'modules.currency.provider.base_url'
+            )
+        ),
+        countries: new CountriesDevProvider(
+            http: $http,
+            baseUrl: (string) $config->get(
+                'modules.countries.provider.base_url'
+            )
+        ),
+        geocodingEndpoint: (string) $config->get(
+            'modules.weather.providers.geocoding_endpoint'
+        ),
+        forecastEndpoint: (string) $config->get(
+            'modules.weather.providers.forecast_endpoint'
+        ),
+        weatherCacheTtl: (int) $runtime->get(
+            'modules.alerts.weather_cache_ttl',
+            120
+        ),
+        currencyCacheTtl: (int) $runtime->get(
+            'modules.alerts.currency_cache_ttl',
+            900
+        ),
+        countryCacheTtl: (int) $runtime->get(
+            'modules.alerts.country_cache_ttl',
+            21600
+        )
+    );
+
+    $monitorGuard = new SsrfGuard(
+        allowHttp: true,
+        allowedPorts: (array) $runtime->get(
+            'modules.monitoring.http.allowed_ports',
+            [80, 443]
+        )
+    );
+    $monitorProbe = new MonitorProbe(
+        userAgent: (string) $config->get(
+            'http.user_agent',
+            'SmartToolboxFaBot/1.0'
+        ),
+        guard: $monitorGuard,
+        connectTimeout: (int) $runtime->get(
+            'modules.monitoring.http.connect_timeout',
+            4
+        ),
+        timeout: (int) $runtime->get(
+            'modules.monitoring.http.timeout',
+            8
+        ),
+        maxResponseBytes: (int) $runtime->get(
+            'modules.monitoring.http.max_response_bytes',
+            131072
+        ),
+        maxRedirects: (int) $runtime->get(
+            'modules.monitoring.http.max_redirects',
+            3
+        )
+    );
+    $monitorRepository = new MonitorRepository($pdo);
 
     if (
         (bool) $runtime->get(
@@ -843,6 +923,114 @@ try {
         $profileModule->registerCallbacks(
             $callbackRouter
         );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.alerts.enabled',
+            true
+        )
+        && (
+            $features->isEnabled('smart_alerts')
+            || $features->isEnabled('scheduled_subscriptions')
+        )
+    ) {
+        (new AlertModule(
+            alerts: $alertRepository,
+            subscriptions: $subscriptionRepository,
+            data: $alertDataProvider,
+            schedule: $scheduleCalculator,
+            preferences: $userPreferences,
+            rateLimiter: $rateLimiter,
+            defaultTimezone: (string) $runtime->get(
+                'modules.settings.default_timezone',
+                'Asia/Tehran'
+            ),
+            maxAlertsPerUser: (int) $runtime->get(
+                'modules.alerts.max_alerts_per_user',
+                30
+            ),
+            maxSubscriptionsPerUser: (int) $runtime->get(
+                'modules.alerts.max_subscriptions_per_user',
+                20
+            ),
+            defaultCheckIntervalSeconds: (int) $runtime->get(
+                'modules.alerts.check_interval_seconds',
+                300
+            ),
+            defaultCooldownSeconds: (int) $runtime->get(
+                'modules.alerts.default_cooldown_seconds',
+                3600
+            ),
+            defaultHysteresis: (float) $runtime->get(
+                'modules.alerts.default_hysteresis',
+                0.5
+            ),
+            maxNotificationsPerDay: (int) $runtime->get(
+                'modules.alerts.max_notifications_per_day',
+                3
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.alerts.rate_limit.max_attempts',
+                40
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.alerts.rate_limit.window_seconds',
+                60
+            ),
+            alertsEnabled: $features->isEnabled('smart_alerts'),
+            subscriptionsEnabled: $features->isEnabled(
+                'scheduled_subscriptions'
+            )
+        ))->register($router);
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.monitoring.enabled',
+            true
+        )
+        && $features->isEnabled('site_monitoring')
+    ) {
+        (new MonitorModule(
+            repository: $monitorRepository,
+            probe: $monitorProbe,
+            ssl: new SslInspector(
+                $monitorGuard,
+                (int) $runtime->get(
+                    'modules.monitoring.http.timeout',
+                    8
+                )
+            ),
+            dns: new DnsInspector(),
+            schedule: $scheduleCalculator,
+            preferences: $userPreferences,
+            rateLimiter: $rateLimiter,
+            defaultTimezone: (string) $runtime->get(
+                'modules.settings.default_timezone',
+                'Asia/Tehran'
+            ),
+            maxMonitorsPerUser: (int) $runtime->get(
+                'modules.monitoring.max_monitors_per_user',
+                20
+            ),
+            minimumIntervalSeconds: (int) $runtime->get(
+                'modules.monitoring.minimum_interval_seconds',
+                300
+            ),
+            maximumIntervalSeconds: (int) $runtime->get(
+                'modules.monitoring.maximum_interval_seconds',
+                86400
+            ),
+            maxAttempts: (int) $runtime->get(
+                'modules.monitoring.rate_limit.max_attempts',
+                30
+            ),
+            windowSeconds: (int) $runtime->get(
+                'modules.monitoring.rate_limit.window_seconds',
+                60
+            )
+        ))->register($router);
     }
 
     if (

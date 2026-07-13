@@ -165,6 +165,27 @@ final class AdminPanelService
                  FROM reminders
                  WHERE status = 'failed'"
             ),
+            'alerts_active' => $this->count(
+                "SELECT COUNT(*)
+                 FROM smart_alerts
+                 WHERE status = 'active'"
+            ),
+            'subscriptions_active' => $this->count(
+                "SELECT COUNT(*)
+                 FROM smart_subscriptions
+                 WHERE status = 'active'"
+            ),
+            'monitors_active' => $this->count(
+                "SELECT COUNT(*)
+                 FROM site_monitors
+                 WHERE status = 'active'"
+            ),
+            'monitors_down' => $this->count(
+                "SELECT COUNT(*)
+                 FROM site_monitors
+                 WHERE status = 'active'
+                   AND last_state = 'down'"
+            ),
             'usage_events_today' => $this->count(
                 'SELECT COUNT(*)
                  FROM usage_events
@@ -1017,6 +1038,228 @@ final class AdminPanelService
             $ip,
             $userAgent
         );
+    }
+
+
+    /**
+     * @return array{
+     *     alerts:list<array<string,mixed>>,
+     *     subscriptions:list<array<string,mixed>>,
+     *     monitors:list<array<string,mixed>>
+     * }
+     */
+    public function automationOverview(
+        int $limit = 100
+    ): array {
+        $limit = max(10, min(500, $limit));
+
+        $alerts = $this->pdo->prepare(
+            'SELECT
+                a.*,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM smart_alerts AS a
+             LEFT JOIN users AS u
+                ON u.telegram_id = a.user_id
+             ORDER BY a.id DESC
+             LIMIT :limit'
+        );
+        $alerts->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $alerts->execute();
+
+        $subscriptions = $this->pdo->prepare(
+            'SELECT
+                s.*,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM smart_subscriptions AS s
+             LEFT JOIN users AS u
+                ON u.telegram_id = s.user_id
+             ORDER BY s.id DESC
+             LIMIT :limit'
+        );
+        $subscriptions->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $subscriptions->execute();
+
+        $monitors = $this->pdo->prepare(
+            'SELECT
+                m.*,
+                u.first_name,
+                u.last_name,
+                u.username,
+                (
+                    SELECT COUNT(*)
+                    FROM monitor_checks AS c
+                    WHERE c.monitor_id = m.id
+                ) AS checks_count
+             FROM site_monitors AS m
+             LEFT JOIN users AS u
+                ON u.telegram_id = m.user_id
+             ORDER BY m.id DESC
+             LIMIT :limit'
+        );
+        $monitors->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $monitors->execute();
+
+        return [
+            'alerts' => $alerts->fetchAll(PDO::FETCH_ASSOC) ?: [],
+            'subscriptions' => $subscriptions->fetchAll(PDO::FETCH_ASSOC) ?: [],
+            'monitors' => $monitors->fetchAll(PDO::FETCH_ASSOC) ?: [],
+        ];
+    }
+
+    public function setAutomationStatus(
+        string $type,
+        int $id,
+        string $status,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $tables = [
+            'alert' => 'smart_alerts',
+            'subscription' => 'smart_subscriptions',
+            'monitor' => 'site_monitors',
+        ];
+
+        if (!isset($tables[$type])) {
+            throw new RuntimeException(
+                'نوع رکورد خودکار معتبر نیست.'
+            );
+        }
+
+        if (!in_array($status, ['active', 'paused', 'cancelled'], true)) {
+            throw new RuntimeException(
+                'وضعیت درخواستی معتبر نیست.'
+            );
+        }
+
+        $extra = $status === 'active'
+            ? ', next_check_at = :next_time'
+            : '';
+
+        if ($type === 'subscription' && $status === 'active') {
+            $extra = ', next_run_at = :next_time';
+        }
+
+        $statement = $this->pdo->prepare(
+            'UPDATE ' . $tables[$type] . '
+             SET
+                status = :status,
+                updated_at = :updated_at'
+                . $extra . '
+             WHERE id = :id'
+        );
+        $parameters = [
+            'status' => $status,
+            'updated_at' => date(DATE_ATOM),
+            'id' => $id,
+        ];
+
+        if ($status === 'active') {
+            $parameters['next_time'] = time();
+        }
+
+        $statement->execute($parameters);
+
+        if ($statement->rowCount() === 0) {
+            throw new RuntimeException(
+                'رکورد موردنظر پیدا نشد.'
+            );
+        }
+
+        $this->audit(
+            $identity,
+            'automation.status',
+            $type . ':' . $id,
+            ['status' => $status],
+            $ip,
+            $userAgent
+        );
+    }
+
+    /**
+     * @return list<array{
+     *     date:string,
+     *     checks:int,
+     *     up:int,
+     *     uptime:float,
+     *     average_response_ms:float
+     * }>
+     */
+    public function monitorDailyUptime(
+        int $monitorId,
+        int $days = 30
+    ): array {
+        $days = max(1, min(365, $days));
+        $cutoff = time() - $days * 86400;
+        $statement = $this->pdo->prepare(
+            "SELECT
+                date(checked_at, 'unixepoch', 'localtime') AS day,
+                COUNT(*) AS checks,
+                SUM(CASE WHEN state = 'up' THEN 1 ELSE 0 END) AS up_count,
+                AVG(CASE WHEN state = 'up' THEN response_ms END) AS avg_response
+             FROM monitor_checks
+             WHERE monitor_id = :monitor_id
+               AND checked_at >= :cutoff
+             GROUP BY day
+             ORDER BY day ASC"
+        );
+        $statement->execute([
+            'monitor_id' => $monitorId,
+            'cutoff' => $cutoff,
+        ]);
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+        $result = [];
+
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $checks = (int) $row['checks'];
+                $up = (int) $row['up_count'];
+                $result[] = [
+                    'date' => (string) $row['day'],
+                    'checks' => $checks,
+                    'up' => $up,
+                    'uptime' => $checks > 0
+                        ? round(($up / $checks) * 100, 2)
+                        : 0.0,
+                    'average_response_ms' => round(
+                        (float) ($row['avg_response'] ?? 0),
+                        2
+                    ),
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return list<array<string,mixed>>
+     */
+    public function monitorChecks(
+        int $monitorId,
+        int $limit = 100
+    ): array {
+        $statement = $this->pdo->prepare(
+            'SELECT *
+             FROM monitor_checks
+             WHERE monitor_id = :monitor_id
+             ORDER BY checked_at DESC
+             LIMIT :limit'
+        );
+        $statement->bindValue(':monitor_id', $monitorId, PDO::PARAM_INT);
+        $statement->bindValue(
+            ':limit',
+            max(1, min(500, $limit)),
+            PDO::PARAM_INT
+        );
+        $statement->execute();
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        return is_array($rows) ? $rows : [];
     }
 
     /**
