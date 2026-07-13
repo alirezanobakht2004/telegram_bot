@@ -30,6 +30,9 @@ use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\GitHub\GitHubClient;
 use SmartToolbox\Modules\GitHub\GitHubReleaseWatchService;
 use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
+use SmartToolbox\Modules\GroupManagement\GroupModerationService;
+use SmartToolbox\Modules\GroupManagement\GroupRepository;
+use SmartToolbox\Modules\GroupManagement\GroupWorker;
 use SmartToolbox\Modules\Monitoring\MonitorProbe;
 use SmartToolbox\Modules\Monitoring\MonitorRepository;
 use SmartToolbox\Modules\Monitoring\MonitorWorker;
@@ -179,6 +182,44 @@ try {
         logFile: (string) $config->get(
             'paths.logs'
         ) . '/jobs.log'
+    );
+
+    $groupRepository = new GroupRepository(
+        pdo: $pdo,
+        defaultSettings: (array) $runtime->get(
+            'modules.group_management.defaults',
+            []
+        )
+    );
+
+    $groupWorker = new GroupWorker(
+        repository: $groupRepository,
+        moderation: new GroupModerationService(
+            telegram: $telegram,
+            repository: $groupRepository
+        ),
+        logFile: (string) $config->get(
+            'paths.logs'
+        ) . '/group_management.log'
+    );
+
+    $runner->register(
+        'group_management.scan',
+        static function () use (
+            $groupWorker,
+            $runtime
+        ): void {
+            $groupWorker->run(
+                batchSize: (int) $runtime->get(
+                    'modules.group_management.worker.batch_size',
+                    20
+                ),
+                retentionDays: (int) $runtime->get(
+                    'modules.group_management.retention_days',
+                    180
+                )
+            );
+        }
     );
 
     $runner->register(
@@ -593,6 +634,34 @@ try {
             maxAttempts: $defaultMaxAttempts,
             uniqueKey: 'monitoring-reports:'
                 . intdiv(time(), $reportInterval)
+        );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.group_management.enabled',
+            true
+        )
+        && $features->isEnabled(
+            'group_management'
+        )
+    ) {
+        $groupInterval = max(
+            60,
+            (int) $runtime->get(
+                'modules.group_management.worker.scan_job_interval_seconds',
+                60
+            )
+        );
+
+        $queue->enqueue(
+            jobType: 'group_management.scan',
+            maxAttempts: $defaultMaxAttempts,
+            uniqueKey: 'group-management-scan:'
+                . intdiv(
+                    time(),
+                    $groupInterval
+                )
         );
     }
 

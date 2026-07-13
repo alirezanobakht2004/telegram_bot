@@ -43,6 +43,13 @@ use SmartToolbox\Modules\Currency\FrankfurterProvider;
 use SmartToolbox\Modules\GitHub\GitHubClient;
 use SmartToolbox\Modules\GitHub\GitHubModule;
 use SmartToolbox\Modules\GitHub\GitHubWatchRepository;
+use SmartToolbox\Modules\GroupManagement\GroupAuthorization;
+use SmartToolbox\Modules\GroupManagement\GroupAutomationListener;
+use SmartToolbox\Modules\GroupManagement\GroupDurationParser;
+use SmartToolbox\Modules\GroupManagement\GroupManagementModule;
+use SmartToolbox\Modules\GroupManagement\GroupModerationService;
+use SmartToolbox\Modules\GroupManagement\GroupRepository;
+use SmartToolbox\Modules\GroupManagement\GroupTemplateRenderer;
 use SmartToolbox\Modules\Inline\InlineDataService;
 use SmartToolbox\Modules\Inline\InlineModule;
 use SmartToolbox\Modules\Inline\InlineResultFactory;
@@ -333,6 +340,30 @@ try {
     $profileRepository = new ProfileRepository(
         $pdo
     );
+
+    $groupRepository = new GroupRepository(
+        pdo: $pdo,
+        defaultSettings: (array) $runtime->get(
+            'modules.group_management.defaults',
+            []
+        )
+    );
+
+    $groupAuthorization =
+        new GroupAuthorization(
+            telegram: $telegram,
+            pdo: $pdo,
+            roleCacheTtl: (int) $runtime->get(
+                'modules.group_management.member_role_cache_ttl',
+                120
+            )
+        );
+
+    $groupModeration =
+        new GroupModerationService(
+            telegram: $telegram,
+            repository: $groupRepository
+        );
 
     $wikiClient = new WikiClient(
         http: $http,
@@ -923,6 +954,71 @@ try {
         $profileModule->registerCallbacks(
             $callbackRouter
         );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.group_management.enabled',
+            true
+        )
+        && $features->isEnabled(
+            'group_management'
+        )
+    ) {
+        $groupModule =
+            new GroupManagementModule(
+                repository: $groupRepository,
+                authorization:
+                    $groupAuthorization,
+                moderation: $groupModeration,
+                duration:
+                    new GroupDurationParser(),
+                rateLimiter: $rateLimiter,
+                maxAttempts: (int) $runtime->get(
+                    'modules.group_management.rate_limit.max_attempts',
+                    40
+                ),
+                windowSeconds: (int) $runtime->get(
+                    'modules.group_management.rate_limit.window_seconds',
+                    60
+                ),
+                maxPurgeMessages: (int) $runtime->get(
+                    'modules.group_management.max_purge_messages',
+                    100
+                ),
+                maxRulesLength: (int) $runtime->get(
+                    'modules.group_management.max_rules_length',
+                    3000
+                ),
+                maxTemplateLength: (int) $runtime->get(
+                    'modules.group_management.max_template_length',
+                    2000
+                ),
+                inviteMaximumDays: (int) $runtime->get(
+                    'modules.group_management.invite_maximum_days',
+                    365
+                )
+            );
+
+        $groupModule->register($router);
+        $groupModule->registerCallbacks(
+            $callbackRouter
+        );
+
+        (new GroupAutomationListener(
+            repository: $groupRepository,
+            authorization:
+                $groupAuthorization,
+            moderation: $groupModeration,
+            templates:
+                new GroupTemplateRenderer(),
+            telegram: $telegram,
+            automodNoticeCooldownSeconds:
+                (int) $runtime->get(
+                    'modules.group_management.automod_notice_cooldown_seconds',
+                    30
+                )
+        ))->register($events);
     }
 
     if (

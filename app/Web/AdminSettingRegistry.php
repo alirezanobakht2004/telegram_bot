@@ -619,6 +619,139 @@ final class AdminSettingRegistry
                 2000
             ),
             ...$this->module(
+                'group_management',
+                'مدیریت حرفه‌ای گروه‌ها',
+                [
+                    'max_purge_messages' =>
+                        $this->integer(
+                            'حداکثر پیام Purge',
+                            1,
+                            100,
+                            'پیام'
+                        ),
+                    'max_rules_length' =>
+                        $this->integer(
+                            'حداکثر طول قوانین',
+                            100,
+                            4000,
+                            'کاراکتر'
+                        ),
+                    'max_template_length' =>
+                        $this->integer(
+                            'حداکثر طول Welcome/Goodbye',
+                            100,
+                            4000,
+                            'کاراکتر'
+                        ),
+                    'invite_maximum_days' =>
+                        $this->integer(
+                            'حداکثر اعتبار لینک دعوت',
+                            1,
+                            3650,
+                            'روز'
+                        ),
+                    'automod_notice_cooldown_seconds' =>
+                        $this->integer(
+                            'Cooldown پیام AutoMod',
+                            5,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'member_role_cache_ttl' =>
+                        $this->integer(
+                            'TTL کش نقش مدیران',
+                            10,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'retention_days' =>
+                        $this->integer(
+                            'نگهداری Audit و سوابق',
+                            7,
+                            3650,
+                            'روز'
+                        ),
+                    'worker.batch_size' =>
+                        $this->integer(
+                            'Batch Worker مدیریت گروه',
+                            1,
+                            100,
+                            'رکورد'
+                        ),
+                    'worker.scan_job_interval_seconds' =>
+                        $this->integer(
+                            'فاصله Job مدیریت گروه',
+                            60,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'defaults.warnings_threshold' =>
+                        $this->integer(
+                            'سقف پیش‌فرض اخطار',
+                            1,
+                            20,
+                            'اخطار'
+                        ),
+                    'defaults.warning_action_duration_seconds' =>
+                        $this->integer(
+                            'مدت Action اخطار',
+                            30,
+                            31622400,
+                            'ثانیه'
+                        ),
+                    'defaults.flood_max_messages' =>
+                        $this->integer(
+                            'پیام مجاز در پنجره Flood',
+                            2,
+                            100,
+                            'پیام'
+                        ),
+                    'defaults.flood_window_seconds' =>
+                        $this->integer(
+                            'پنجره Flood',
+                            1,
+                            300,
+                            'ثانیه'
+                        ),
+                    'defaults.duplicate_max_messages' =>
+                        $this->integer(
+                            'تکرار مجاز پیام',
+                            1,
+                            20,
+                            'بار'
+                        ),
+                    'defaults.duplicate_window_seconds' =>
+                        $this->integer(
+                            'پنجره تکرار',
+                            1,
+                            600,
+                            'ثانیه'
+                        ),
+                    'defaults.captcha_timeout_seconds' =>
+                        $this->integer(
+                            'مهلت پیش‌فرض کپچا',
+                            30,
+                            1800,
+                            'ثانیه'
+                        ),
+                    'defaults.captcha_max_attempts' =>
+                        $this->integer(
+                            'تلاش پیش‌فرض کپچا',
+                            1,
+                            10,
+                            'بار'
+                        ),
+                    'defaults.bot_slow_mode_seconds' =>
+                        $this->integer(
+                            'Slow Mode پیش‌فرض ربات',
+                            0,
+                            3600,
+                            'ثانیه'
+                        ),
+                ],
+                2000
+            ),
+            ...$this->module(
                 'profile',
                 'پروفایل و میان‌برها',
                 [

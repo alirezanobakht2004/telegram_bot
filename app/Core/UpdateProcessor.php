@@ -179,6 +179,15 @@ final class UpdateProcessor
             return true;
         }
 
+        $this->events?->dispatch(
+            'update.persisted.message',
+            $context
+        );
+
+        if ($context->isPropagationStopped()) {
+            return true;
+        }
+
         $text = $message['text'] ?? null;
 
         if (!is_string($text)) {
@@ -240,7 +249,13 @@ final class UpdateProcessor
             );
         }
 
-        return false;
+        $this->events?->dispatch(
+            'update.persisted.'
+            . $context->type,
+            $context
+        );
+
+        return $context->isPropagationStopped();
     }
 
     private function processCallbackQuery(

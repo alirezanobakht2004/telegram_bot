@@ -139,6 +139,11 @@ return [
                 'rollout_percentage' => 100,
                 'description' => 'SSRF-protected website, SSL and DNS monitoring.',
             ],
+            'group_management' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Professional group moderation, anti-spam, captcha and join request management.',
+            ],
         ],
     ],
 
@@ -299,6 +304,54 @@ return [
 
             'rate_limit' => [
                 'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+        ],
+
+
+        'group_management' => [
+            'enabled' => true,
+
+            'max_purge_messages' => 100,
+            'max_rules_length' => 3000,
+            'max_template_length' => 2000,
+            'invite_maximum_days' => 365,
+            'automod_notice_cooldown_seconds' => 30,
+            'member_role_cache_ttl' => 120,
+            'retention_days' => 180,
+
+            'worker' => [
+                'batch_size' => 20,
+                'scan_job_interval_seconds' => 60,
+            ],
+
+            'defaults' => [
+                'warnings_threshold' => 3,
+                'warning_action' => 'mute',
+                'warning_action_duration_seconds' => 3600,
+
+                'anti_spam_enabled' => 0,
+                'flood_max_messages' => 6,
+                'flood_window_seconds' => 10,
+                'duplicate_max_messages' => 3,
+                'duplicate_window_seconds' => 30,
+
+                'anti_link_enabled' => 0,
+                'bad_words_enabled' => 0,
+
+                'captcha_enabled' => 0,
+                'captcha_timeout_seconds' => 120,
+                'captcha_max_attempts' => 3,
+                'captcha_failure_action' => 'kick',
+
+                'welcome_enabled' => 0,
+                'goodbye_enabled' => 0,
+                'bot_slow_mode_seconds' => 0,
+                'join_request_mode' => 'manual',
+            ],
+
+            'rate_limit' => [
+                'max_attempts' => 40,
                 'window_seconds' => 60,
             ],
         ],

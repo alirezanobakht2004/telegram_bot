@@ -843,3 +843,66 @@ tr:last-child td {
         flex-direction: column;
     }
 }
+
+
+/* Release Three: professional group management */
+
+.panel.nested {
+    margin: 0;
+    border-style: dashed;
+    box-shadow: none;
+}
+
+.panel.nested h3 {
+    margin-top: 0;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .025);
+}
+
+.checkbox-row input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+}
+
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.inline-form {
+    display: inline-flex;
+    margin: 0;
+}
+
+.tag-list .button {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+.panel textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+@media (max-width: 560px) {
+    .tag-list,
+    .inline-form {
+        width: 100%;
+    }
+
+    .tag-list .button {
+        width: 100%;
+    }
+}

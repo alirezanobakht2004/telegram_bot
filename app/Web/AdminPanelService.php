@@ -15,6 +15,10 @@ use SmartToolbox\Core\JobQueue;
 use SmartToolbox\Core\RuntimeSettings;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Modules\Reminders\ReminderWorker;
+use SmartToolbox\Modules\GroupManagement\GroupAuthorization;
+use SmartToolbox\Modules\GroupManagement\GroupModerationService;
+use SmartToolbox\Modules\GroupManagement\GroupRepository;
+use SmartToolbox\Modules\GroupManagement\GroupWorker;
 use Throwable;
 
 final class AdminPanelService
@@ -185,6 +189,37 @@ final class AdminPanelService
                  FROM site_monitors
                  WHERE status = 'active'
                    AND last_state = 'down'"
+            ),
+            'managed_groups' => $this->count(
+                'SELECT COUNT(*)
+                 FROM group_settings'
+            ),
+            'group_warnings_active' => $this->count(
+                'SELECT COUNT(*)
+                 FROM group_warnings
+                 WHERE active = 1'
+            ),
+            'group_sanctions_active' => $this->count(
+                "SELECT COUNT(*)
+                 FROM group_sanctions
+                 WHERE status = 'active'"
+            ),
+            'group_captchas_pending' => $this->count(
+                "SELECT COUNT(*)
+                 FROM group_captcha_challenges
+                 WHERE status = 'pending'"
+            ),
+            'group_join_requests_pending' => $this->count(
+                "SELECT COUNT(*)
+                 FROM group_join_requests
+                 WHERE status = 'pending'"
+            ),
+            'group_automod_today' => $this->count(
+                "SELECT COUNT(*)
+                 FROM group_audit_logs
+                 WHERE action LIKE 'automod.%'
+                   AND julianday(created_at)
+                    >= julianday('now', 'start of day')"
             ),
             'usage_events_today' => $this->count(
                 'SELECT COUNT(*)
@@ -1040,6 +1075,1293 @@ final class AdminPanelService
         );
     }
 
+
+
+    /**
+     * @return array{
+     *     groups:list<array<string,mixed>>,
+     *     selected_group:?array<string,mixed>,
+     *     settings:?array<string,mixed>,
+     *     warnings:list<array<string,mixed>>,
+     *     sanctions:list<array<string,mixed>>,
+     *     captchas:list<array<string,mixed>>,
+     *     join_requests:list<array<string,mixed>>,
+     *     invite_links:list<array<string,mixed>>,
+     *     domains:list<string>,
+     *     bad_words:list<string>,
+     *     audit:list<array<string,mixed>>
+     * }
+     */
+    public function groupManagementOverview(
+        int $chatId = 0,
+        int $limit = 100
+    ): array {
+        $limit = max(10, min(500, $limit));
+
+        $groupsStatement = $this->pdo->prepare(
+            "SELECT
+                c.telegram_id AS chat_id,
+                c.title,
+                c.username,
+                c.type,
+                c.is_active,
+                c.admin_blocked,
+                c.last_seen_at,
+                s.anti_spam_enabled,
+                s.anti_link_enabled,
+                s.bad_words_enabled,
+                s.captcha_enabled,
+                s.welcome_enabled,
+                s.goodbye_enabled,
+                s.join_request_mode,
+                s.bot_slow_mode_seconds,
+                (
+                    SELECT COUNT(*)
+                    FROM group_warnings AS w
+                    WHERE w.chat_id = c.telegram_id
+                      AND w.active = 1
+                ) AS active_warnings,
+                (
+                    SELECT COUNT(*)
+                    FROM group_sanctions AS x
+                    WHERE x.chat_id = c.telegram_id
+                      AND x.status = 'active'
+                ) AS active_sanctions,
+                (
+                    SELECT COUNT(*)
+                    FROM group_captcha_challenges AS p
+                    WHERE p.chat_id = c.telegram_id
+                      AND p.status = 'pending'
+                ) AS pending_captchas,
+                (
+                    SELECT COUNT(*)
+                    FROM group_join_requests AS j
+                    WHERE j.chat_id = c.telegram_id
+                      AND j.status = 'pending'
+                ) AS pending_join_requests,
+                (
+                    SELECT COUNT(*)
+                    FROM group_audit_logs AS a
+                    WHERE a.chat_id = c.telegram_id
+                      AND a.action LIKE 'automod.%'
+                      AND julianday(a.created_at)
+                        >= julianday('now', '-1 day')
+                ) AS automod_24h
+             FROM chats AS c
+             LEFT JOIN group_settings AS s
+                ON s.chat_id = c.telegram_id
+             WHERE c.type IN (
+                'group',
+                'supergroup'
+             )
+             ORDER BY
+                CASE
+                    WHEN s.chat_id IS NULL THEN 1
+                    ELSE 0
+                END,
+                c.last_seen_at DESC
+             LIMIT :limit"
+        );
+
+        $groupsStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $groupsStatement->execute();
+
+        $groups = $groupsStatement->fetchAll(
+            PDO::FETCH_ASSOC
+        );
+
+        $groups = is_array($groups)
+            ? $groups
+            : [];
+
+        if ($chatId === 0 && $groups !== []) {
+            $chatId = (int) $groups[0]['chat_id'];
+        }
+
+        if ($chatId === 0) {
+            return [
+                'groups' => $groups,
+                'selected_group' => null,
+                'settings' => null,
+                'warnings' => [],
+                'sanctions' => [],
+                'captchas' => [],
+                'join_requests' => [],
+                'invite_links' => [],
+                'domains' => [],
+                'bad_words' => [],
+                'audit' => [],
+            ];
+        }
+
+        $selectedStatement = $this->pdo->prepare(
+            "SELECT
+                telegram_id AS chat_id,
+                title,
+                username,
+                type,
+                is_active,
+                admin_blocked,
+                first_seen_at,
+                last_seen_at,
+                request_count
+             FROM chats
+             WHERE telegram_id = :chat_id
+               AND type IN (
+                    'group',
+                    'supergroup'
+               )
+             LIMIT 1"
+        );
+
+        $selectedStatement->execute([
+            'chat_id' => $chatId,
+        ]);
+
+        $selectedGroup = $selectedStatement->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!is_array($selectedGroup)) {
+            throw new RuntimeException(
+                'گروه انتخاب‌شده پیدا نشد.'
+            );
+        }
+
+        $repository = $this->groupRepository();
+        $settings = $repository->settings($chatId);
+
+        $warningsStatement = $this->pdo->prepare(
+            "SELECT
+                w.id,
+                w.user_id,
+                w.admin_id,
+                w.reason,
+                w.active,
+                w.created_at,
+                w.revoked_at,
+                target.first_name AS target_first_name,
+                target.last_name AS target_last_name,
+                target.username AS target_username,
+                admin.first_name AS admin_first_name,
+                admin.username AS admin_username
+             FROM group_warnings AS w
+             LEFT JOIN users AS target
+                ON target.telegram_id = w.user_id
+             LEFT JOIN users AS admin
+                ON admin.telegram_id = w.admin_id
+             WHERE w.chat_id = :chat_id
+             ORDER BY w.id DESC
+             LIMIT :limit"
+        );
+
+        $warningsStatement->bindValue(
+            ':chat_id',
+            $chatId,
+            PDO::PARAM_INT
+        );
+
+        $warningsStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $warningsStatement->execute();
+
+        $sanctionsStatement = $this->pdo->prepare(
+            "SELECT
+                x.*,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM group_sanctions AS x
+             LEFT JOIN users AS u
+                ON u.telegram_id = x.user_id
+             WHERE x.chat_id = :chat_id
+             ORDER BY x.id DESC
+             LIMIT :limit"
+        );
+
+        $sanctionsStatement->bindValue(
+            ':chat_id',
+            $chatId,
+            PDO::PARAM_INT
+        );
+
+        $sanctionsStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $sanctionsStatement->execute();
+
+        $captchasStatement = $this->pdo->prepare(
+            "SELECT
+                p.*,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM group_captcha_challenges AS p
+             LEFT JOIN users AS u
+                ON u.telegram_id = p.user_id
+             WHERE p.chat_id = :chat_id
+             ORDER BY p.id DESC
+             LIMIT :limit"
+        );
+
+        $captchasStatement->bindValue(
+            ':chat_id',
+            $chatId,
+            PDO::PARAM_INT
+        );
+
+        $captchasStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $captchasStatement->execute();
+
+        $joinStatement = $this->pdo->prepare(
+            "SELECT
+                j.*,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM group_join_requests AS j
+             LEFT JOIN users AS u
+                ON u.telegram_id = j.user_id
+             WHERE j.chat_id = :chat_id
+             ORDER BY j.id DESC
+             LIMIT :limit"
+        );
+
+        $joinStatement->bindValue(
+            ':chat_id',
+            $chatId,
+            PDO::PARAM_INT
+        );
+
+        $joinStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $joinStatement->execute();
+
+        $linksStatement = $this->pdo->prepare(
+            "SELECT *
+             FROM group_invite_links
+             WHERE chat_id = :chat_id
+             ORDER BY id DESC
+             LIMIT :limit"
+        );
+
+        $linksStatement->bindValue(
+            ':chat_id',
+            $chatId,
+            PDO::PARAM_INT
+        );
+
+        $linksStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $linksStatement->execute();
+
+        $auditStatement = $this->pdo->prepare(
+            "SELECT
+                a.*,
+                actor.first_name AS actor_first_name,
+                actor.username AS actor_username,
+                target.first_name AS target_first_name,
+                target.username AS target_username
+             FROM group_audit_logs AS a
+             LEFT JOIN users AS actor
+                ON actor.telegram_id = a.actor_id
+             LEFT JOIN users AS target
+                ON target.telegram_id = a.target_user_id
+             WHERE a.chat_id = :chat_id
+             ORDER BY a.id DESC
+             LIMIT :limit"
+        );
+
+        $auditStatement->bindValue(
+            ':chat_id',
+            $chatId,
+            PDO::PARAM_INT
+        );
+
+        $auditStatement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $auditStatement->execute();
+
+        return [
+            'groups' => $groups,
+            'selected_group' => $selectedGroup,
+            'settings' => $settings,
+            'warnings' =>
+                $warningsStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [],
+            'sanctions' =>
+                $sanctionsStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [],
+            'captchas' =>
+                $captchasStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [],
+            'join_requests' =>
+                $joinStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [],
+            'invite_links' =>
+                $linksStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [],
+            'domains' => $repository->domains(
+                $chatId
+            ),
+            'bad_words' => $repository->badWords(
+                $chatId
+            ),
+            'audit' =>
+                $auditStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     */
+    public function saveGroupSettings(
+        int $chatId,
+        array $values,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        if ($chatId === 0) {
+            throw new RuntimeException(
+                'شناسه گروه معتبر نیست.'
+            );
+        }
+
+        $groupExists = $this->count(
+            "SELECT COUNT(*)
+             FROM chats
+             WHERE telegram_id = :chat_id
+               AND type IN (
+                    'group',
+                    'supergroup'
+               )",
+            ['chat_id' => $chatId]
+        );
+
+        if ($groupExists !== 1) {
+            throw new RuntimeException(
+                'گروه در دیتابیس ربات پیدا نشد.'
+            );
+        }
+
+        $booleanFields = [
+            'anti_spam_enabled',
+            'anti_link_enabled',
+            'bad_words_enabled',
+            'captcha_enabled',
+            'welcome_enabled',
+            'goodbye_enabled',
+        ];
+
+        $integerRules = [
+            'warnings_threshold' => [1, 20],
+            'warning_action_duration_seconds' => [
+                30,
+                31622400,
+            ],
+            'flood_max_messages' => [2, 100],
+            'flood_window_seconds' => [1, 300],
+            'duplicate_max_messages' => [1, 20],
+            'duplicate_window_seconds' => [
+                1,
+                600,
+            ],
+            'captcha_timeout_seconds' => [
+                30,
+                1800,
+            ],
+            'captcha_max_attempts' => [1, 10],
+            'bot_slow_mode_seconds' => [0, 3600],
+        ];
+
+        $clean = [];
+
+        foreach ($booleanFields as $field) {
+            $clean[$field] = (
+                ($values[$field] ?? '0') === '1'
+                || ($values[$field] ?? false) === true
+                || ($values[$field] ?? 0) === 1
+            ) ? 1 : 0;
+        }
+
+        foreach (
+            $integerRules
+            as $field => [$minimum, $maximum]
+        ) {
+            $value = (int) (
+                $values[$field] ?? 0
+            );
+
+            if (
+                $value < $minimum
+                || $value > $maximum
+            ) {
+                throw new RuntimeException(
+                    "مقدار {$field} باید بین "
+                    . "{$minimum} و {$maximum} باشد."
+                );
+            }
+
+            $clean[$field] = $value;
+        }
+
+        $warningAction = (string) (
+            $values['warning_action'] ?? 'mute'
+        );
+
+        if (
+            !in_array(
+                $warningAction,
+                ['none', 'mute', 'ban'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'Action اخطار معتبر نیست.'
+            );
+        }
+
+        $clean['warning_action'] =
+            $warningAction;
+
+        $captchaFailure = (string) (
+            $values[
+                'captcha_failure_action'
+            ] ?? 'kick'
+        );
+
+        if (
+            !in_array(
+                $captchaFailure,
+                ['kick', 'ban'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'Action ناموفق کپچا معتبر نیست.'
+            );
+        }
+
+        $clean['captcha_failure_action'] =
+            $captchaFailure;
+
+        $joinMode = (string) (
+            $values['join_request_mode']
+            ?? 'manual'
+        );
+
+        if (
+            !in_array(
+                $joinMode,
+                ['manual', 'approve', 'decline'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'حالت درخواست عضویت معتبر نیست.'
+            );
+        }
+
+        $clean['join_request_mode'] =
+            $joinMode;
+
+        foreach (
+            [
+                'rules_text' => 4000,
+                'welcome_message' => 4000,
+                'goodbye_message' => 4000,
+            ]
+            as $field => $maximumLength
+        ) {
+            $clean[$field] = mb_substr(
+                trim(
+                    (string) (
+                        $values[$field] ?? ''
+                    )
+                ),
+                0,
+                $maximumLength
+            );
+        }
+
+        $authorization =
+            new GroupAuthorization(
+                telegram: $this->telegram,
+                pdo: $this->pdo,
+                roleCacheTtl: (int)
+                    $this->runtime->get(
+                        'modules.group_management.member_role_cache_ttl',
+                        120
+                    )
+            );
+
+        if (
+            $clean['anti_spam_enabled'] === 1
+            || $clean['anti_link_enabled'] === 1
+            || $clean['bad_words_enabled'] === 1
+            || $clean['bot_slow_mode_seconds'] > 0
+        ) {
+            $authorization->requireBotRight(
+                $chatId,
+                'can_delete_messages'
+            );
+        }
+
+        if (
+            $clean['captcha_enabled'] === 1
+            || $clean['warning_action']
+                !== 'none'
+        ) {
+            $authorization->requireBotRight(
+                $chatId,
+                'can_restrict_members'
+            );
+        }
+
+        if (
+            $clean['join_request_mode']
+            !== 'manual'
+        ) {
+            $authorization->requireBotRight(
+                $chatId,
+                'can_invite_users'
+            );
+        }
+
+        $repository = $this->groupRepository();
+        $repository->updateSettings(
+            $chatId,
+            $clean
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            null,
+            'settings.web_admin',
+            [
+                'admin_identity' => $identity,
+                'values' => $clean,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.settings',
+            (string) $chatId,
+            $clean,
+            $ip,
+            $userAgent
+        );
+    }
+
+    /**
+     * @return array{
+     *     sanctions_lifted:int,
+     *     sanctions_failed:int,
+     *     captchas_expired:int,
+     *     captchas_failed:int,
+     *     pruned:int
+     * }
+     */
+    public function processGroupWorker(
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): array {
+        $repository = $this->groupRepository();
+
+        $worker = new GroupWorker(
+            repository: $repository,
+            moderation: new GroupModerationService(
+                telegram: $this->telegram,
+                repository: $repository
+            ),
+            logFile: rtrim(
+                $this->logsDirectory,
+                '/\\'
+            ) . '/group_management.log'
+        );
+
+        $result = $worker->run(
+            batchSize: (int) $this->runtime->get(
+                'modules.group_management.worker.batch_size',
+                20
+            ),
+            retentionDays: (int) $this->runtime->get(
+                'modules.group_management.retention_days',
+                180
+            )
+        );
+
+        $this->audit(
+            $identity,
+            'group.worker',
+            'manual',
+            $result,
+            $ip,
+            $userAgent
+        );
+
+        return $result;
+    }
+
+    public function resolveGroupJoinRequest(
+        int $chatId,
+        int $requestId,
+        string $decision,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        if (
+            !in_array(
+                $decision,
+                ['approve', 'decline'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'تصمیم درخواست عضویت معتبر نیست.'
+            );
+        }
+
+        $repository = $this->groupRepository();
+        $request = $repository->joinRequest(
+            $chatId,
+            $requestId
+        );
+
+        if (
+            $request === null
+            || $request['status'] !== 'pending'
+        ) {
+            throw new RuntimeException(
+                'درخواست عضویت در انتظار پیدا نشد.'
+            );
+        }
+
+        $moderation = new GroupModerationService(
+            telegram: $this->telegram,
+            repository: $repository
+        );
+
+        $userId = (int) $request['user_id'];
+
+        if ($decision === 'approve') {
+            $moderation->approveJoinRequest(
+                $chatId,
+                $userId
+            );
+
+            $status = 'approved';
+        } else {
+            $moderation->declineJoinRequest(
+                $chatId,
+                $userId
+            );
+
+            $status = 'declined';
+        }
+
+        $repository->resolveJoinRequest(
+            $chatId,
+            $requestId,
+            $status,
+            null
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            $userId,
+            'join_request.web_' . $status,
+            [
+                'request_id' => $requestId,
+                'admin_identity' => $identity,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.join_request',
+            $chatId . ':' . $requestId,
+            ['status' => $status],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function createGroupInvite(
+        int $chatId,
+        string $name,
+        int $expireMinutes,
+        int $memberLimit,
+        bool $createsJoinRequest,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        $maximumDays = max(
+            1,
+            (int) $this->runtime->get(
+                'modules.group_management.invite_maximum_days',
+                365
+            )
+        );
+
+        if (
+            $expireMinutes < 0
+            || $expireMinutes
+                > $maximumDays * 1440
+        ) {
+            throw new RuntimeException(
+                'مدت اعتبار لینک خارج از محدوده است.'
+            );
+        }
+
+        if (
+            $memberLimit < 0
+            || $memberLimit > 99999
+        ) {
+            throw new RuntimeException(
+                'سقف عضو لینک معتبر نیست.'
+            );
+        }
+
+        $options = [];
+
+        $name = trim($name);
+
+        if ($name !== '') {
+            $options['name'] = mb_substr(
+                $name,
+                0,
+                32
+            );
+        }
+
+        if ($expireMinutes > 0) {
+            $options['expire_date'] =
+                time() + $expireMinutes * 60;
+        }
+
+        if ($createsJoinRequest) {
+            $options[
+                'creates_join_request'
+            ] = true;
+        } elseif ($memberLimit > 0) {
+            $options['member_limit'] =
+                $memberLimit;
+        }
+
+        $repository = $this->groupRepository();
+        $moderation = new GroupModerationService(
+            telegram: $this->telegram,
+            repository: $repository
+        );
+
+        $link = $moderation->createInviteLink(
+            $chatId,
+            $options
+        );
+
+        $id = $repository->storeInviteLink(
+            $chatId,
+            $this->webActorUserId(),
+            $link
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            null,
+            'invite.web_created',
+            [
+                'invite_id' => $id,
+                'admin_identity' => $identity,
+                'options' => $options,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.invite_create',
+            $chatId . ':' . $id,
+            $options,
+            $ip,
+            $userAgent
+        );
+
+        return $id;
+    }
+
+    public function liftGroupSanction(
+        int $chatId,
+        int $sanctionId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $statement = $this->pdo->prepare(
+            "SELECT *
+             FROM group_sanctions
+             WHERE id = :id
+               AND chat_id = :chat_id
+               AND status = 'active'
+             LIMIT 1"
+        );
+
+        $statement->execute([
+            'id' => $sanctionId,
+            'chat_id' => $chatId,
+        ]);
+
+        $sanction = $statement->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!is_array($sanction)) {
+            throw new RuntimeException(
+                'محدودیت فعال پیدا نشد.'
+            );
+        }
+
+        $repository = $this->groupRepository();
+        $moderation = new GroupModerationService(
+            telegram: $this->telegram,
+            repository: $repository
+        );
+
+        $targetUserId = (int)
+            $sanction['user_id'];
+
+        if (
+            $sanction['sanction_type']
+            === 'ban'
+        ) {
+            $moderation->unban(
+                $chatId,
+                $targetUserId
+            );
+        } else {
+            $moderation->unmute(
+                $chatId,
+                $targetUserId
+            );
+        }
+
+        $repository->completeSanction(
+            $sanctionId,
+            true
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            $targetUserId,
+            'sanction.web_lifted',
+            [
+                'sanction_id' => $sanctionId,
+                'admin_identity' => $identity,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.sanction_lift',
+            $chatId . ':' . $sanctionId,
+            [],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function cancelGroupCaptcha(
+        int $chatId,
+        int $captchaId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $repository = $this->groupRepository();
+        $captcha = $repository->captcha(
+            $captchaId
+        );
+
+        if (
+            $captcha === null
+            || (int) $captcha['chat_id']
+                !== $chatId
+            || $captcha['status']
+                !== 'pending'
+        ) {
+            throw new RuntimeException(
+                'کپچای در انتظار پیدا نشد.'
+            );
+        }
+
+        $targetUserId = (int)
+            $captcha['user_id'];
+
+        $moderation = new GroupModerationService(
+            telegram: $this->telegram,
+            repository: $repository
+        );
+
+        $moderation->unmute(
+            $chatId,
+            $targetUserId
+        );
+
+        $repository->finishCaptcha(
+            $captchaId,
+            'cancelled'
+        );
+
+        $repository->revokeActiveSanctions(
+            $chatId,
+            $targetUserId,
+            ['captcha']
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            $targetUserId,
+            'captcha.web_cancelled',
+            [
+                'challenge_id' => $captchaId,
+                'admin_identity' => $identity,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.captcha_cancel',
+            $chatId . ':' . $captchaId,
+            [],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function revokeGroupInvite(
+        int $chatId,
+        int $inviteId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $repository = $this->groupRepository();
+        $invite = $repository->inviteLink(
+            $chatId,
+            $inviteId
+        );
+
+        if (
+            $invite === null
+            || $invite['status'] !== 'active'
+        ) {
+            throw new RuntimeException(
+                'لینک دعوت فعال پیدا نشد.'
+            );
+        }
+
+        $moderation = new GroupModerationService(
+            telegram: $this->telegram,
+            repository: $repository
+        );
+
+        $moderation->revokeInviteLink(
+            $chatId,
+            (string) $invite['invite_link']
+        );
+
+        $repository->markInviteRevoked(
+            $inviteId
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            null,
+            'invite.web_revoked',
+            [
+                'invite_id' => $inviteId,
+                'admin_identity' => $identity,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.invite_revoke',
+            $chatId . ':' . $inviteId,
+            [],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function updateGroupList(
+        int $chatId,
+        string $listType,
+        string $operation,
+        string $value,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        if (
+            !in_array(
+                $listType,
+                ['domain', 'bad_word'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'نوع فهرست معتبر نیست.'
+            );
+        }
+
+        if (
+            !in_array(
+                $operation,
+                ['add', 'remove', 'clear'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'عملیات فهرست معتبر نیست.'
+            );
+        }
+
+        $repository = $this->groupRepository();
+        $affected = 0;
+
+        if ($listType === 'domain') {
+            if ($operation === 'clear') {
+                $statement = $this->pdo->prepare(
+                    'DELETE FROM group_domain_whitelist
+                     WHERE chat_id = :chat_id'
+                );
+
+                $statement->execute([
+                    'chat_id' => $chatId,
+                ]);
+
+                $affected = $statement->rowCount();
+            } elseif ($operation === 'add') {
+                $repository->addDomain(
+                    $chatId,
+                    $value,
+                    $this->webActorUserId()
+                );
+
+                $affected = 1;
+            } else {
+                $affected = $repository->removeDomain(
+                    $chatId,
+                    $value
+                ) ? 1 : 0;
+            }
+        } else {
+            if ($operation === 'clear') {
+                $affected = $repository->clearBadWords(
+                    $chatId
+                );
+            } elseif ($operation === 'add') {
+                $repository->addBadWord(
+                    $chatId,
+                    $value,
+                    $this->webActorUserId()
+                );
+
+                $affected = 1;
+            } else {
+                $affected = $repository->removeBadWord(
+                    $chatId,
+                    $value
+                ) ? 1 : 0;
+            }
+        }
+
+        $repository->audit(
+            $chatId,
+            null,
+            null,
+            'settings.web_list_'
+                . $listType
+                . '.'
+                . $operation,
+            [
+                'value' => $value,
+                'affected' => $affected,
+                'admin_identity' => $identity,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.list',
+            $chatId . ':' . $listType,
+            [
+                'operation' => $operation,
+                'value' => $value,
+                'affected' => $affected,
+            ],
+            $ip,
+            $userAgent
+        );
+
+        return $affected;
+    }
+
+    public function clearGroupWarnings(
+        int $chatId,
+        int $targetUserId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        if ($targetUserId <= 0) {
+            throw new RuntimeException(
+                'شناسه کاربر معتبر نیست.'
+            );
+        }
+
+        $repository = $this->groupRepository();
+        $count = $repository->clearWarnings(
+            $chatId,
+            $targetUserId,
+            null
+        );
+
+        $repository->audit(
+            $chatId,
+            null,
+            $targetUserId,
+            'warning.web_clear',
+            [
+                'count' => $count,
+                'admin_identity' => $identity,
+            ]
+        );
+
+        $this->audit(
+            $identity,
+            'group.warning_clear',
+            $chatId . ':' . $targetUserId,
+            ['count' => $count],
+            $ip,
+            $userAgent
+        );
+
+        return $count;
+    }
+
+    private function webActorUserId(): int
+    {
+        $configured = (array) $this->runtime->get(
+            'admins',
+            []
+        );
+
+        foreach ($configured as $value) {
+            $candidate = null;
+
+            if (
+                is_int($value)
+                && $value > 0
+            ) {
+                $candidate = $value;
+            } elseif (
+                is_string($value)
+                && preg_match(
+                    '/^\d+$/',
+                    $value
+                ) === 1
+            ) {
+                $candidate = (int) $value;
+            }
+
+            if (
+                $candidate !== null
+                && $this->count(
+                    'SELECT COUNT(*)
+                     FROM users
+                     WHERE telegram_id = :id',
+                    ['id' => $candidate]
+                ) === 1
+            ) {
+                return $candidate;
+            }
+        }
+
+        $candidate = $this->scalar(
+            'SELECT telegram_id
+             FROM users
+             ORDER BY id ASC
+             LIMIT 1'
+        );
+
+        if (is_numeric($candidate)) {
+            return (int) $candidate;
+        }
+
+        throw new RuntimeException(
+            'برای ثبت سازنده فهرست، یک Admin Telegram در config لازم است.'
+        );
+    }
+
+    private function groupRepository(): GroupRepository
+    {
+        return new GroupRepository(
+            pdo: $this->pdo,
+            defaultSettings: (array)
+                $this->runtime->get(
+                    'modules.group_management.defaults',
+                    []
+                )
+        );
+    }
 
     /**
      * @return array{

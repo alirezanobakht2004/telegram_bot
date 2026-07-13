@@ -764,6 +764,200 @@ if (
                 );
                 break;
 
+            case 'save_group_settings':
+                $service->saveGroupSettings(
+                    (int) (
+                        $_POST['chat_id'] ?? 0
+                    ),
+                    $_POST,
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'تنظیمات گروه ذخیره شد.'
+                );
+                break;
+
+            case 'process_group_worker':
+                $result =
+                    $service->processGroupWorker(
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    'Worker گروه اجرا شد: '
+                    . $result['sanctions_lifted']
+                    . ' محدودیت پایان‌یافته، '
+                    . $result['captchas_expired']
+                    . ' کپچای منقضی و '
+                    . $result['pruned']
+                    . ' رکورد پاک‌سازی شد.'
+                );
+                break;
+
+            case 'resolve_group_join':
+                $service->resolveGroupJoinRequest(
+                    (int) (
+                        $_POST['chat_id'] ?? 0
+                    ),
+                    (int) (
+                        $_POST['request_id'] ?? 0
+                    ),
+                    (string) (
+                        $_POST['decision'] ?? ''
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'درخواست عضویت پردازش شد.'
+                );
+                break;
+
+            case 'create_group_invite':
+                $inviteId =
+                    $service->createGroupInvite(
+                        (int) (
+                            $_POST['chat_id'] ?? 0
+                        ),
+                        (string) (
+                            $_POST['link_name'] ?? ''
+                        ),
+                        (int) (
+                            $_POST[
+                                'expire_minutes'
+                            ] ?? 0
+                        ),
+                        (int) (
+                            $_POST[
+                                'member_limit'
+                            ] ?? 0
+                        ),
+                        (string) (
+                            $_POST[
+                                'creates_join_request'
+                            ] ?? '0'
+                        ) === '1',
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "لینک دعوت #{$inviteId} ساخته شد."
+                );
+                break;
+
+            case 'lift_group_sanction':
+                $service->liftGroupSanction(
+                    (int) (
+                        $_POST['chat_id'] ?? 0
+                    ),
+                    (int) (
+                        $_POST['sanction_id']
+                        ?? 0
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'محدودیت کاربر برداشته شد.'
+                );
+                break;
+
+            case 'cancel_group_captcha':
+                $service->cancelGroupCaptcha(
+                    (int) (
+                        $_POST['chat_id'] ?? 0
+                    ),
+                    (int) (
+                        $_POST['captcha_id']
+                        ?? 0
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'کپچا لغو و محدودیت عضو برداشته شد.'
+                );
+                break;
+
+            case 'revoke_group_invite':
+                $service->revokeGroupInvite(
+                    (int) (
+                        $_POST['chat_id'] ?? 0
+                    ),
+                    (int) (
+                        $_POST['invite_id'] ?? 0
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'لینک دعوت لغو شد.'
+                );
+                break;
+
+            case 'clear_group_warnings':
+                $count =
+                    $service->clearGroupWarnings(
+                        (int) (
+                            $_POST['chat_id'] ?? 0
+                        ),
+                        (int) (
+                            $_POST[
+                                'target_user_id'
+                            ] ?? 0
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "{$count} اخطار فعال پاک شد."
+                );
+                break;
+
+            case 'update_group_list':
+                $affected =
+                    $service->updateGroupList(
+                        (int) (
+                            $_POST['chat_id'] ?? 0
+                        ),
+                        (string) (
+                            $_POST['list_type']
+                            ?? ''
+                        ),
+                        (string) (
+                            $_POST['operation']
+                            ?? ''
+                        ),
+                        (string) (
+                            $_POST['value'] ?? ''
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "فهرست گروه به‌روزرسانی شد؛ {$affected} رکورد تغییر کرد."
+                );
+                break;
+
             case 'automation_status':
                 $service->setAutomationStatus(
                     (string) ($_POST['automation_type'] ?? ''),
@@ -985,13 +1179,27 @@ if (
         )
     ) ?: 'dashboard';
 
-    $redirect(
-        $basePath
+    $returnUrl = $basePath
         . '/?section='
         . rawurlencode(
             $returnSection
-        )
+        );
+
+    $returnChatId = (int) (
+        $_POST['return_chat_id'] ?? 0
     );
+
+    if (
+        $returnSection === 'group_management'
+        && $returnChatId !== 0
+    ) {
+        $returnUrl .= '&chat_id='
+            . rawurlencode(
+                (string) $returnChatId
+            );
+    }
+
+    $redirect($returnUrl);
 }
 
 $sections = [
@@ -1004,6 +1212,7 @@ $sections = [
     'chats',
     'broadcasts',
     'reminders',
+    'group_management',
     'automation',
     'logs',
     'system',
@@ -1028,7 +1237,12 @@ $csrf = $auth->csrfToken();
 $flashMessage = $consumeFlash();
 $stats = in_array(
     $section,
-    ['dashboard', 'reminders', 'automation'],
+    [
+        'dashboard',
+        'reminders',
+        'group_management',
+        'automation',
+    ],
     true
 )
     ? $service->dashboard()
@@ -1044,6 +1258,7 @@ $navigation = [
     'chats' => ['💬', 'چت‌ها'],
     'broadcasts' => ['📣', 'ارسال همگانی'],
     'reminders' => ['⏰', 'یادآورها'],
+    'group_management' => ['🛡', 'مدیریت گروه‌ها'],
     'automation' => ['🔔', 'هشدار و مانیتور'],
     'logs' => ['🧾', 'لاگ‌ها'],
     'system' => ['🩺', 'سیستم'],
@@ -1172,6 +1387,11 @@ $navigation = [
                 ['📬', 'اشتراک فعال', $stats['subscriptions_active']],
                 ['📡', 'مانیتور فعال', $stats['monitors_active']],
                 ['❌', 'مانیتور Down', $stats['monitors_down']],
+                ['🛡', 'گروه مدیریت‌شده', $stats['managed_groups']],
+                ['⚠️', 'اخطار فعال گروه', $stats['group_warnings_active']],
+                ['🔒', 'محدودیت فعال گروه', $stats['group_sanctions_active']],
+                ['🧩', 'کپچای در انتظار', $stats['group_captchas_pending']],
+                ['🚪', 'درخواست عضویت', $stats['group_join_requests_pending']],
                 ['📈', 'رویداد امروز', $stats['usage_events_today']],
                 ['🧵', 'Job فعال', $stats['jobs_queued']],
                 ['💀', 'Dead Letter', $stats['dead_letters']],
@@ -3198,6 +3418,1636 @@ $navigation = [
                 </div>
             </section>
 
+
+
+        <?php elseif ($section === 'group_management'): ?>
+            <?php
+            $selectedGroupId = (int) (
+                $_GET['chat_id'] ?? 0
+            );
+
+            $groupManagement =
+                $service->groupManagementOverview(
+                    $selectedGroupId,
+                    100
+                );
+
+            $selectedGroup =
+                $groupManagement[
+                    'selected_group'
+                ];
+
+            $groupSettings =
+                $groupManagement['settings'];
+
+            if (is_array($selectedGroup)) {
+                $selectedGroupId = (int)
+                    $selectedGroup['chat_id'];
+            }
+
+            $activeWarnings = count(
+                array_filter(
+                    $groupManagement['warnings'],
+                    static fn (array $row): bool =>
+                        (int) $row['active'] === 1
+                )
+            );
+
+            $activeSanctions = count(
+                array_filter(
+                    $groupManagement['sanctions'],
+                    static fn (array $row): bool =>
+                        $row['status'] === 'active'
+                )
+            );
+
+            $pendingCaptchas = count(
+                array_filter(
+                    $groupManagement['captchas'],
+                    static fn (array $row): bool =>
+                        $row['status'] === 'pending'
+                )
+            );
+
+            $pendingRequests = count(
+                array_filter(
+                    $groupManagement[
+                        'join_requests'
+                    ],
+                    static fn (array $row): bool =>
+                        $row['status'] === 'pending'
+                )
+            );
+
+            $checked = static function (
+                array $settings,
+                string $key
+            ): string {
+                return (int) (
+                    $settings[$key] ?? 0
+                ) === 1
+                    ? 'checked'
+                    : '';
+            };
+
+            $memberName = static function (
+                array $row,
+                string $prefix = ''
+            ): string {
+                $first = trim(
+                    (string) (
+                        $row[
+                            $prefix
+                            . 'first_name'
+                        ] ?? ''
+                    )
+                );
+
+                $last = trim(
+                    (string) (
+                        $row[
+                            $prefix
+                            . 'last_name'
+                        ] ?? ''
+                    )
+                );
+
+                $username = trim(
+                    (string) (
+                        $row[
+                            $prefix
+                            . 'username'
+                        ] ?? ''
+                    )
+                );
+
+                $name = trim(
+                    $first . ' ' . $last
+                );
+
+                if ($name !== '') {
+                    return $name
+                        . (
+                            $username !== ''
+                                ? ' (@'
+                                    . $username
+                                    . ')'
+                                : ''
+                        );
+                }
+
+                return $username !== ''
+                    ? '@' . $username
+                    : 'بدون نام';
+            };
+            ?>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>مدیریت حرفه‌ای گروه‌ها</h2>
+                        <p>
+                            تنظیم مجزای هر گروه، AutoMod، اخطار،
+                            کپچا، لینک دعوت و درخواست عضویت
+                        </p>
+                    </div>
+
+                    <form
+                        method="post"
+                        action="<?= $h($basePath) ?>/"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= $h($csrf) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="process_group_worker"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_section"
+                            value="group_management"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_chat_id"
+                            value="<?= $h($selectedGroupId) ?>"
+                        >
+                        <button
+                            class="button primary"
+                            type="submit"
+                        >
+                            اجرای Worker الان
+                        </button>
+                    </form>
+                </div>
+
+                <form
+                    method="get"
+                    action="<?= $h($basePath) ?>/"
+                    class="search-form"
+                >
+                    <input
+                        type="hidden"
+                        name="section"
+                        value="group_management"
+                    >
+
+                    <select
+                        name="chat_id"
+                        required
+                    >
+                        <?php foreach (
+                            $groupManagement['groups']
+                            as $group
+                        ): ?>
+                            <?php
+                            $groupId = (int)
+                                $group['chat_id'];
+
+                            $groupTitle = trim(
+                                (string) (
+                                    $group['title']
+                                    ?? ''
+                                )
+                            );
+
+                            if ($groupTitle === '') {
+                                $groupTitle =
+                                    (string) $groupId;
+                            }
+                            ?>
+                            <option
+                                value="<?= $h($groupId) ?>"
+                                <?= $selectedGroupId === $groupId ? 'selected' : '' ?>
+                            >
+                                <?= $h($groupTitle) ?>
+                                · <?= $h($group['type']) ?>
+                                · <?= $h($groupId) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <button
+                        class="button secondary"
+                        type="submit"
+                    >
+                        بازکردن گروه
+                    </button>
+                </form>
+            </section>
+
+            <?php if (
+                !is_array($selectedGroup)
+                || !is_array($groupSettings)
+            ): ?>
+                <section class="panel">
+                    <div class="notice">
+                        هنوز گروه یا سوپرگروهی در دیتابیس ربات ثبت نشده است.
+                    </div>
+                </section>
+            <?php else: ?>
+                <section class="metrics">
+                    <article class="metric-card">
+                        <span class="metric-icon">⚠️</span>
+                        <div>
+                            <small>اخطار فعال</small>
+                            <strong>
+                                <?= $number($activeWarnings) ?>
+                            </strong>
+                        </div>
+                    </article>
+
+                    <article class="metric-card">
+                        <span class="metric-icon">🔒</span>
+                        <div>
+                            <small>محدودیت فعال</small>
+                            <strong>
+                                <?= $number($activeSanctions) ?>
+                            </strong>
+                        </div>
+                    </article>
+
+                    <article class="metric-card">
+                        <span class="metric-icon">🧩</span>
+                        <div>
+                            <small>کپچای در انتظار</small>
+                            <strong>
+                                <?= $number($pendingCaptchas) ?>
+                            </strong>
+                        </div>
+                    </article>
+
+                    <article class="metric-card">
+                        <span class="metric-icon">🚪</span>
+                        <div>
+                            <small>درخواست عضویت</small>
+                            <strong>
+                                <?= $number($pendingRequests) ?>
+                            </strong>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>
+                                <?= $h(
+                                    $selectedGroup['title']
+                                    ?: $selectedGroupId
+                                ) ?>
+                            </h2>
+                            <p>
+                                <?= $h($selectedGroup['type']) ?>
+                                · ID:
+                                <?= $h($selectedGroupId) ?>
+                                · آخرین فعالیت:
+                                <?= $h(
+                                    $selectedGroup[
+                                        'last_seen_at'
+                                    ] ?? '—'
+                                ) ?>
+                            </p>
+                        </div>
+
+                        <span
+                            class="badge <?= (int) $selectedGroup['is_active'] === 1 ? 'success' : 'danger' ?>"
+                        >
+                            <?= (int) $selectedGroup['is_active'] === 1 ? 'فعال' : 'غیرفعال' ?>
+                        </span>
+                    </div>
+
+                    <form
+                        method="post"
+                        action="<?= $h($basePath) ?>/"
+                        class="stack"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= $h($csrf) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="save_group_settings"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_section"
+                            value="group_management"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_chat_id"
+                            value="<?= $h($selectedGroupId) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="chat_id"
+                            value="<?= $h($selectedGroupId) ?>"
+                        >
+
+                        <div class="grid two">
+                            <article class="panel nested">
+                                <h3>اخطار و مجازات خودکار</h3>
+
+                                <label>
+                                    سقف اخطار
+                                    <input
+                                        type="number"
+                                        name="warnings_threshold"
+                                        min="1"
+                                        max="20"
+                                        value="<?= $h($groupSettings['warnings_threshold']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    Action پس از سقف
+                                    <select name="warning_action">
+                                        <?php foreach (
+                                            [
+                                                'none' => 'بدون Action',
+                                                'mute' => 'Mute',
+                                                'ban' => 'Ban',
+                                            ]
+                                            as $value => $label
+                                        ): ?>
+                                            <option
+                                                value="<?= $h($value) ?>"
+                                                <?= $groupSettings['warning_action'] === $value ? 'selected' : '' ?>
+                                            >
+                                                <?= $h($label) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+
+                                <label>
+                                    مدت Action برحسب ثانیه
+                                    <input
+                                        type="number"
+                                        name="warning_action_duration_seconds"
+                                        min="30"
+                                        max="31622400"
+                                        value="<?= $h($groupSettings['warning_action_duration_seconds']) ?>"
+                                        required
+                                    >
+                                </label>
+                            </article>
+
+                            <article class="panel nested">
+                                <h3>ضداسپم و Slow Mode</h3>
+
+                                <?php foreach (
+                                    [
+                                        'anti_spam_enabled' => 'ضد Flood و تکرار',
+                                        'anti_link_enabled' => 'ضد لینک',
+                                        'bad_words_enabled' => 'کلمات ممنوع',
+                                    ]
+                                    as $field => $label
+                                ): ?>
+                                    <input
+                                        type="hidden"
+                                        name="<?= $h($field) ?>"
+                                        value="0"
+                                    >
+                                    <label class="checkbox-row">
+                                        <input
+                                            type="checkbox"
+                                            name="<?= $h($field) ?>"
+                                            value="1"
+                                            <?= $checked($groupSettings, $field) ?>
+                                        >
+                                        <?= $h($label) ?>
+                                    </label>
+                                <?php endforeach; ?>
+
+                                <label>
+                                    پیام مجاز در پنجره Flood
+                                    <input
+                                        type="number"
+                                        name="flood_max_messages"
+                                        min="2"
+                                        max="100"
+                                        value="<?= $h($groupSettings['flood_max_messages']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    پنجره Flood برحسب ثانیه
+                                    <input
+                                        type="number"
+                                        name="flood_window_seconds"
+                                        min="1"
+                                        max="300"
+                                        value="<?= $h($groupSettings['flood_window_seconds']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    تکرار مجاز یک پیام
+                                    <input
+                                        type="number"
+                                        name="duplicate_max_messages"
+                                        min="1"
+                                        max="20"
+                                        value="<?= $h($groupSettings['duplicate_max_messages']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    پنجره تکرار برحسب ثانیه
+                                    <input
+                                        type="number"
+                                        name="duplicate_window_seconds"
+                                        min="1"
+                                        max="600"
+                                        value="<?= $h($groupSettings['duplicate_window_seconds']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    Slow Mode ربات برحسب ثانیه
+                                    <input
+                                        type="number"
+                                        name="bot_slow_mode_seconds"
+                                        min="0"
+                                        max="3600"
+                                        value="<?= $h($groupSettings['bot_slow_mode_seconds']) ?>"
+                                        required
+                                    >
+                                </label>
+                            </article>
+
+                            <article class="panel nested">
+                                <h3>کپچا و درخواست عضویت</h3>
+
+                                <input
+                                    type="hidden"
+                                    name="captcha_enabled"
+                                    value="0"
+                                >
+                                <label class="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        name="captcha_enabled"
+                                        value="1"
+                                        <?= $checked($groupSettings, 'captcha_enabled') ?>
+                                    >
+                                    کپچای اعضای جدید
+                                </label>
+
+                                <label>
+                                    مهلت کپچا برحسب ثانیه
+                                    <input
+                                        type="number"
+                                        name="captcha_timeout_seconds"
+                                        min="30"
+                                        max="1800"
+                                        value="<?= $h($groupSettings['captcha_timeout_seconds']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    حداکثر تلاش کپچا
+                                    <input
+                                        type="number"
+                                        name="captcha_max_attempts"
+                                        min="1"
+                                        max="10"
+                                        value="<?= $h($groupSettings['captcha_max_attempts']) ?>"
+                                        required
+                                    >
+                                </label>
+
+                                <label>
+                                    Action کپچای ناموفق
+                                    <select name="captcha_failure_action">
+                                        <option
+                                            value="kick"
+                                            <?= $groupSettings['captcha_failure_action'] === 'kick' ? 'selected' : '' ?>
+                                        >
+                                            Kick
+                                        </option>
+                                        <option
+                                            value="ban"
+                                            <?= $groupSettings['captcha_failure_action'] === 'ban' ? 'selected' : '' ?>
+                                        >
+                                            Ban
+                                        </option>
+                                    </select>
+                                </label>
+
+                                <label>
+                                    مدیریت درخواست عضویت
+                                    <select name="join_request_mode">
+                                        <?php foreach (
+                                            [
+                                                'manual' => 'دستی',
+                                                'approve' => 'تأیید خودکار',
+                                                'decline' => 'رد خودکار',
+                                            ]
+                                            as $value => $label
+                                        ): ?>
+                                            <option
+                                                value="<?= $h($value) ?>"
+                                                <?= $groupSettings['join_request_mode'] === $value ? 'selected' : '' ?>
+                                            >
+                                                <?= $h($label) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </label>
+                            </article>
+
+                            <article class="panel nested">
+                                <h3>Welcome، Goodbye و قوانین</h3>
+
+                                <input
+                                    type="hidden"
+                                    name="welcome_enabled"
+                                    value="0"
+                                >
+                                <label class="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        name="welcome_enabled"
+                                        value="1"
+                                        <?= $checked($groupSettings, 'welcome_enabled') ?>
+                                    >
+                                    پیام خوش‌آمدگویی
+                                </label>
+
+                                <textarea
+                                    name="welcome_message"
+                                    rows="4"
+                                    maxlength="4000"
+                                    placeholder="خوش آمدی {first_name} به {chat_title}"
+                                ><?= $h($groupSettings['welcome_message'] ?? '') ?></textarea>
+
+                                <input
+                                    type="hidden"
+                                    name="goodbye_enabled"
+                                    value="0"
+                                >
+                                <label class="checkbox-row">
+                                    <input
+                                        type="checkbox"
+                                        name="goodbye_enabled"
+                                        value="1"
+                                        <?= $checked($groupSettings, 'goodbye_enabled') ?>
+                                    >
+                                    پیام خداحافظی
+                                </label>
+
+                                <textarea
+                                    name="goodbye_message"
+                                    rows="4"
+                                    maxlength="4000"
+                                    placeholder="{first_name} از گروه خارج شد."
+                                ><?= $h($groupSettings['goodbye_message'] ?? '') ?></textarea>
+
+                                <label>
+                                    قوانین گروه
+                                    <textarea
+                                        name="rules_text"
+                                        rows="7"
+                                        maxlength="4000"
+                                    ><?= $h($groupSettings['rules_text'] ?? '') ?></textarea>
+                                </label>
+
+                                <small>
+                                    متغیرها:
+                                    {first_name}، {last_name}،
+                                    {full_name}، {username}،
+                                    {user_id}، {chat_title}
+                                </small>
+                            </article>
+                        </div>
+
+                        <button
+                            class="button primary"
+                            type="submit"
+                        >
+                            ذخیره تمام تنظیمات گروه
+                        </button>
+                    </form>
+                </section>
+
+                <section class="grid two">
+                    <article class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <h2>Whitelist دامنه</h2>
+                                <p>
+                                    زیر دامنه‌های هر Domain نیز مجاز هستند.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form
+                            method="post"
+                            action="<?= $h($basePath) ?>/"
+                            class="search-form"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="<?= $h($csrf) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="action"
+                                value="update_group_list"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_section"
+                                value="group_management"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_chat_id"
+                                value="<?= $h($selectedGroupId) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="chat_id"
+                                value="<?= $h($selectedGroupId) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="list_type"
+                                value="domain"
+                            >
+                            <input
+                                type="hidden"
+                                name="operation"
+                                value="add"
+                            >
+                            <input
+                                type="text"
+                                name="value"
+                                placeholder="example.com"
+                                required
+                            >
+                            <button
+                                class="button primary"
+                                type="submit"
+                            >
+                                افزودن
+                            </button>
+                        </form>
+
+                        <div class="tag-list">
+                            <?php foreach (
+                                $groupManagement['domains']
+                                as $domain
+                            ): ?>
+                                <form
+                                    method="post"
+                                    action="<?= $h($basePath) ?>/"
+                                    class="inline-form"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="csrf"
+                                        value="<?= $h($csrf) ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="action"
+                                        value="update_group_list"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="return_section"
+                                        value="group_management"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="return_chat_id"
+                                        value="<?= $h($selectedGroupId) ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="chat_id"
+                                        value="<?= $h($selectedGroupId) ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="list_type"
+                                        value="domain"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="operation"
+                                        value="remove"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="value"
+                                        value="<?= $h($domain) ?>"
+                                    >
+                                    <button
+                                        class="button small danger"
+                                        type="submit"
+                                    >
+                                        <?= $h($domain) ?> ×
+                                    </button>
+                                </form>
+                            <?php endforeach; ?>
+                        </div>
+                    </article>
+
+                    <article class="panel">
+                        <div class="panel-header">
+                            <div>
+                                <h2>کلمات ممنوع</h2>
+                                <p>
+                                    عبارت‌های ثبت‌شده پس از Normalization بررسی می‌شوند.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form
+                            method="post"
+                            action="<?= $h($basePath) ?>/"
+                            class="search-form"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="<?= $h($csrf) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="action"
+                                value="update_group_list"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_section"
+                                value="group_management"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_chat_id"
+                                value="<?= $h($selectedGroupId) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="chat_id"
+                                value="<?= $h($selectedGroupId) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="list_type"
+                                value="bad_word"
+                            >
+                            <input
+                                type="hidden"
+                                name="operation"
+                                value="add"
+                            >
+                            <input
+                                type="text"
+                                name="value"
+                                placeholder="کلمه یا عبارت"
+                                required
+                            >
+                            <button
+                                class="button primary"
+                                type="submit"
+                            >
+                                افزودن
+                            </button>
+                        </form>
+
+                        <div class="tag-list">
+                            <?php foreach (
+                                $groupManagement['bad_words']
+                                as $word
+                            ): ?>
+                                <form
+                                    method="post"
+                                    action="<?= $h($basePath) ?>/"
+                                    class="inline-form"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="csrf"
+                                        value="<?= $h($csrf) ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="action"
+                                        value="update_group_list"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="return_section"
+                                        value="group_management"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="return_chat_id"
+                                        value="<?= $h($selectedGroupId) ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="chat_id"
+                                        value="<?= $h($selectedGroupId) ?>"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="list_type"
+                                        value="bad_word"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="operation"
+                                        value="remove"
+                                    >
+                                    <input
+                                        type="hidden"
+                                        name="value"
+                                        value="<?= $h($word) ?>"
+                                    >
+                                    <button
+                                        class="button small danger"
+                                        type="submit"
+                                    >
+                                        <?= $h($word) ?> ×
+                                    </button>
+                                </form>
+                            <?php endforeach; ?>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>درخواست‌های عضویت</h2>
+                            <p>
+                                تصمیم‌های دستی و تاریخچه درخواست‌ها
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>کاربر</th>
+                                <th>Bio</th>
+                                <th>وضعیت</th>
+                                <th>زمان</th>
+                                <th>عملیات</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $groupManagement[
+                                    'join_requests'
+                                ]
+                                as $row
+                            ): ?>
+                                <tr>
+                                    <td>#<?= $h($row['id']) ?></td>
+                                    <td>
+                                        <?= $h($memberName($row)) ?>
+                                        <small>
+                                            <?= $h($row['user_id']) ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            mb_substr(
+                                                (string) (
+                                                    $row['bio'] ?? ''
+                                                ),
+                                                0,
+                                                180
+                                            )
+                                        ) ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge neutral">
+                                            <?= $h($row['status']) ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?= $h($row['requested_at']) ?>
+                                    </td>
+                                    <td class="actions">
+                                        <?php if (
+                                            $row['status']
+                                            === 'pending'
+                                        ): ?>
+                                            <?php foreach (
+                                                [
+                                                    'approve' => 'تأیید',
+                                                    'decline' => 'رد',
+                                                ]
+                                                as $decision => $label
+                                            ): ?>
+                                                <form
+                                                    method="post"
+                                                    action="<?= $h($basePath) ?>/"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf"
+                                                        value="<?= $h($csrf) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="resolve_group_join"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="return_section"
+                                                        value="group_management"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="return_chat_id"
+                                                        value="<?= $h($selectedGroupId) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="chat_id"
+                                                        value="<?= $h($selectedGroupId) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="request_id"
+                                                        value="<?= $h($row['id']) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="decision"
+                                                        value="<?= $h($decision) ?>"
+                                                    >
+                                                    <button
+                                                        class="button small <?= $decision === 'approve' ? 'primary' : 'danger' ?>"
+                                                        type="submit"
+                                                    >
+                                                        <?= $h($label) ?>
+                                                    </button>
+                                                </form>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>اخطارها</h2>
+                            <p>آخرین اخطارهای ثبت‌شده گروه</p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>کاربر</th>
+                                <th>مدیر</th>
+                                <th>دلیل</th>
+                                <th>وضعیت</th>
+                                <th>زمان</th>
+                                <th>عملیات</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $groupManagement['warnings']
+                                as $row
+                            ): ?>
+                                <tr>
+                                    <td>#<?= $h($row['id']) ?></td>
+                                    <td>
+                                        <?= $h(
+                                            $memberName(
+                                                $row,
+                                                'target_'
+                                            )
+                                        ) ?>
+                                        <small>
+                                            <?= $h($row['user_id']) ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            $memberName(
+                                                $row,
+                                                'admin_'
+                                            )
+                                        ) ?>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            mb_substr(
+                                                (string) (
+                                                    $row['reason'] ?? ''
+                                                ),
+                                                0,
+                                                220
+                                            )
+                                        ) ?>
+                                    </td>
+                                    <td>
+                                        <span class="badge <?= (int) $row['active'] === 1 ? 'danger' : 'neutral' ?>">
+                                            <?= (int) $row['active'] === 1 ? 'فعال' : 'لغوشده' ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?= $h($row['created_at']) ?>
+                                    </td>
+                                    <td>
+                                        <?php if (
+                                            (int) $row['active']
+                                            === 1
+                                        ): ?>
+                                            <form
+                                                method="post"
+                                                action="<?= $h($basePath) ?>/"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="csrf"
+                                                    value="<?= $h($csrf) ?>"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="action"
+                                                    value="clear_group_warnings"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="return_section"
+                                                    value="group_management"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="return_chat_id"
+                                                    value="<?= $h($selectedGroupId) ?>"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="chat_id"
+                                                    value="<?= $h($selectedGroupId) ?>"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="target_user_id"
+                                                    value="<?= $h($row['user_id']) ?>"
+                                                >
+                                                <button
+                                                    class="button small danger"
+                                                    type="submit"
+                                                >
+                                                    پاک‌کردن اخطارهای کاربر
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="grid two">
+                    <article class="panel">
+                        <h2>محدودیت‌ها</h2>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>کاربر</th>
+                                    <th>نوع</th>
+                                    <th>وضعیت</th>
+                                    <th>پایان</th>
+                                    <th>خطا</th>
+                                    <th>عملیات</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach (
+                                    $groupManagement[
+                                        'sanctions'
+                                    ]
+                                    as $row
+                                ): ?>
+                                    <tr>
+                                        <td>#<?= $h($row['id']) ?></td>
+                                        <td>
+                                            <?= $h($memberName($row)) ?>
+                                            <small>
+                                                <?= $h($row['user_id']) ?>
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <?= $h($row['sanction_type']) ?>
+                                        </td>
+                                        <td>
+                                            <?= $h($row['status']) ?>
+                                        </td>
+                                        <td>
+                                            <?= $h($row['until_at'] ?? 'دائم') ?>
+                                        </td>
+                                        <td>
+                                            <?= $h(
+                                                mb_substr(
+                                                    (string) (
+                                                        $row['last_error']
+                                                        ?? ''
+                                                    ),
+                                                    0,
+                                                    160
+                                                )
+                                            ) ?>
+                                        </td>
+                                        <td>
+                                            <?php if (
+                                                $row['status']
+                                                === 'active'
+                                            ): ?>
+                                                <form
+                                                    method="post"
+                                                    action="<?= $h($basePath) ?>/"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf"
+                                                        value="<?= $h($csrf) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="lift_group_sanction"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="return_section"
+                                                        value="group_management"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="return_chat_id"
+                                                        value="<?= $h($selectedGroupId) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="chat_id"
+                                                        value="<?= $h($selectedGroupId) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="sanction_id"
+                                                        value="<?= $h($row['id']) ?>"
+                                                    >
+                                                    <button
+                                                        class="button small secondary"
+                                                        type="submit"
+                                                    >
+                                                        رفع محدودیت
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+
+                    <article class="panel">
+                        <h2>کپچاها</h2>
+                        <div class="table-wrap">
+                            <table>
+                                <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>کاربر</th>
+                                    <th>وضعیت</th>
+                                    <th>تلاش</th>
+                                    <th>انقضا</th>
+                                    <th>عملیات</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                <?php foreach (
+                                    $groupManagement[
+                                        'captchas'
+                                    ]
+                                    as $row
+                                ): ?>
+                                    <tr>
+                                        <td>#<?= $h($row['id']) ?></td>
+                                        <td>
+                                            <?= $h($memberName($row)) ?>
+                                            <small>
+                                                <?= $h($row['user_id']) ?>
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <?= $h($row['status']) ?>
+                                        </td>
+                                        <td>
+                                            <?= $number($row['attempts']) ?>
+                                            /
+                                            <?= $number($row['max_attempts']) ?>
+                                        </td>
+                                        <td>
+                                            <?= $h(
+                                                date(
+                                                    'Y-m-d H:i:s',
+                                                    (int) $row[
+                                                        'expires_at'
+                                                    ]
+                                                )
+                                            ) ?>
+                                        </td>
+                                        <td>
+                                            <?php if (
+                                                $row['status']
+                                                === 'pending'
+                                            ): ?>
+                                                <form
+                                                    method="post"
+                                                    action="<?= $h($basePath) ?>/"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="csrf"
+                                                        value="<?= $h($csrf) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="action"
+                                                        value="cancel_group_captcha"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="return_section"
+                                                        value="group_management"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="return_chat_id"
+                                                        value="<?= $h($selectedGroupId) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="chat_id"
+                                                        value="<?= $h($selectedGroupId) ?>"
+                                                    >
+                                                    <input
+                                                        type="hidden"
+                                                        name="captcha_id"
+                                                        value="<?= $h($row['id']) ?>"
+                                                    >
+                                                    <button
+                                                        class="button small danger"
+                                                        type="submit"
+                                                    >
+                                                        لغو کپچا
+                                                    </button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>ساخت لینک دعوت</h2>
+                            <p>
+                                لینک محدود، تاریخ‌دار یا مبتنی بر Join Request
+                            </p>
+                        </div>
+                    </div>
+
+                    <form
+                        method="post"
+                        action="<?= $h($basePath) ?>/"
+                        class="search-form"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= $h($csrf) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="create_group_invite"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_section"
+                            value="group_management"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_chat_id"
+                            value="<?= $h($selectedGroupId) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="chat_id"
+                            value="<?= $h($selectedGroupId) ?>"
+                        >
+
+                        <input
+                            type="text"
+                            name="link_name"
+                            maxlength="32"
+                            placeholder="نام اختیاری"
+                        >
+
+                        <input
+                            type="number"
+                            name="expire_minutes"
+                            min="0"
+                            value="1440"
+                            placeholder="اعتبار دقیقه"
+                        >
+
+                        <input
+                            type="number"
+                            name="member_limit"
+                            min="0"
+                            max="99999"
+                            value="0"
+                            placeholder="سقف عضو"
+                        >
+
+                        <label class="checkbox-row">
+                            <input
+                                type="checkbox"
+                                name="creates_join_request"
+                                value="1"
+                            >
+                            درخواست عضویت
+                        </label>
+
+                        <button
+                            class="button primary"
+                            type="submit"
+                        >
+                            ساخت لینک
+                        </button>
+                    </form>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>لینک‌های دعوت ساخته‌شده توسط ربات</h2>
+                            <p>
+                                لینک‌های محدود، تاریخ‌دار و Join Request
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>نام</th>
+                                <th>لینک</th>
+                                <th>انقضا</th>
+                                <th>سقف عضو</th>
+                                <th>Request</th>
+                                <th>وضعیت</th>
+                                <th>عملیات</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $groupManagement[
+                                    'invite_links'
+                                ]
+                                as $row
+                            ): ?>
+                                <tr>
+                                    <td>#<?= $h($row['id']) ?></td>
+                                    <td><?= $h($row['link_name'] ?? '') ?></td>
+                                    <td>
+                                        <code>
+                                            <?= $h(
+                                                mb_substr(
+                                                    (string) $row[
+                                                        'invite_link'
+                                                    ],
+                                                    0,
+                                                    100
+                                                )
+                                            ) ?>
+                                        </code>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            $row['expire_at']
+                                            ?? '—'
+                                        ) ?>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            $row['member_limit']
+                                            ?? '—'
+                                        ) ?>
+                                    </td>
+                                    <td>
+                                        <?= (int) $row['creates_join_request'] === 1 ? 'بله' : 'خیر' ?>
+                                    </td>
+                                    <td><?= $h($row['status']) ?></td>
+                                    <td>
+                                        <?php if (
+                                            $row['status']
+                                            === 'active'
+                                        ): ?>
+                                            <form
+                                                method="post"
+                                                action="<?= $h($basePath) ?>/"
+                                            >
+                                                <input
+                                                    type="hidden"
+                                                    name="csrf"
+                                                    value="<?= $h($csrf) ?>"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="action"
+                                                    value="revoke_group_invite"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="return_section"
+                                                    value="group_management"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="return_chat_id"
+                                                    value="<?= $h($selectedGroupId) ?>"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="chat_id"
+                                                    value="<?= $h($selectedGroupId) ?>"
+                                                >
+                                                <input
+                                                    type="hidden"
+                                                    name="invite_id"
+                                                    value="<?= $h($row['id']) ?>"
+                                                >
+                                                <button
+                                                    class="button small danger"
+                                                    type="submit"
+                                                >
+                                                    لغو
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>Audit گروه</h2>
+                            <p>
+                                عملیات مدیران، AutoMod، ورود و خروج،
+                                کپچا و درخواست عضویت
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Action</th>
+                                <th>Actor</th>
+                                <th>Target</th>
+                                <th>موفق</th>
+                                <th>جزئیات</th>
+                                <th>زمان</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $groupManagement['audit']
+                                as $row
+                            ): ?>
+                                <tr>
+                                    <td>#<?= $h($row['id']) ?></td>
+                                    <td>
+                                        <code>
+                                            <?= $h($row['action']) ?>
+                                        </code>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            $row[
+                                                'actor_first_name'
+                                            ] ?? 'سیستم'
+                                        ) ?>
+                                        <small>
+                                            <?= $h(
+                                                $row['actor_id']
+                                                ?? ''
+                                            ) ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?= $h(
+                                            $row[
+                                                'target_first_name'
+                                            ] ?? ''
+                                        ) ?>
+                                        <small>
+                                            <?= $h(
+                                                $row[
+                                                    'target_user_id'
+                                                ] ?? ''
+                                            ) ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?= (int) $row['success'] === 1 ? '✅' : '❌' ?>
+                                    </td>
+                                    <td>
+                                        <small>
+                                            <?= $h(
+                                                mb_substr(
+                                                    (string) (
+                                                        $row[
+                                                            'error_message'
+                                                        ]
+                                                        ?? $row[
+                                                            'details_json'
+                                                        ]
+                                                    ),
+                                                    0,
+                                                    260
+                                                )
+                                            ) ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?= $h($row['created_at']) ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            <?php endif; ?>
 
         <?php elseif ($section === 'automation'): ?>
             <?php
