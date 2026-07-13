@@ -45,6 +45,8 @@ use SmartToolbox\Modules\GroupManagement\GroupWorker;
 use SmartToolbox\Modules\Monitoring\MonitorProbe;
 use SmartToolbox\Modules\Monitoring\MonitorRepository;
 use SmartToolbox\Modules\Monitoring\MonitorWorker;
+use SmartToolbox\Modules\MiniApp\MiniAppMaintenanceWorker;
+use SmartToolbox\Modules\MiniApp\MiniAppSessionRepository;
 use SmartToolbox\Modules\Quiz\QuizMaintenanceWorker;
 use SmartToolbox\Modules\Quiz\QuizRepository;
 use SmartToolbox\Modules\Quiz\QuizScoring;
@@ -425,6 +427,47 @@ try {
                 retentionDays: (int)
                     $runtime->get(
                         'modules.quiz_games.retention_days',
+                        180
+                    )
+            );
+        }
+    );
+
+    $miniAppSessions = new MiniAppSessionRepository(
+        pdo: $pdo,
+        idleTtlSeconds: (int) $runtime->get(
+            'modules.mini_app.security.session_idle_ttl_seconds',
+            1200
+        ),
+        absoluteTtlSeconds: (int) $runtime->get(
+            'modules.mini_app.security.session_absolute_ttl_seconds',
+            21600
+        ),
+        maxActivePerUser: (int) $runtime->get(
+            'modules.mini_app.security.max_active_sessions_per_user',
+            5
+        )
+    );
+
+    $miniAppWorker = new MiniAppMaintenanceWorker(
+        $miniAppSessions
+    );
+
+    $runner->register(
+        'mini_app.maintenance',
+        static function () use (
+            $miniAppWorker,
+            $runtime
+        ): void {
+            $miniAppWorker->run(
+                sessionRetentionDays: (int)
+                    $runtime->get(
+                        'modules.mini_app.retention_days',
+                        30
+                    ),
+                auditRetentionDays: (int)
+                    $runtime->get(
+                        'modules.mini_app.audit_retention_days',
                         180
                     )
             );
@@ -870,6 +913,34 @@ try {
                 . intdiv(
                     time(),
                     $quizInterval
+                )
+        );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.mini_app.enabled',
+            true
+        )
+        && $features->isEnabled(
+            'mini_app'
+        )
+    ) {
+        $miniAppInterval = max(
+            60,
+            (int) $runtime->get(
+                'modules.mini_app.worker.interval_seconds',
+                3600
+            )
+        );
+
+        $queue->enqueue(
+            jobType: 'mini_app.maintenance',
+            maxAttempts: $defaultMaxAttempts,
+            uniqueKey: 'mini-app-maintenance:'
+                . intdiv(
+                    time(),
+                    $miniAppInterval
                 )
         );
     }

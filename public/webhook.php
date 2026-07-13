@@ -64,6 +64,7 @@ use SmartToolbox\Modules\Monitoring\MonitorModule;
 use SmartToolbox\Modules\Monitoring\MonitorProbe;
 use SmartToolbox\Modules\Monitoring\MonitorRepository;
 use SmartToolbox\Modules\Monitoring\SslInspector;
+use SmartToolbox\Modules\MiniApp\MiniAppModule;
 use SmartToolbox\Modules\Profile\ProfileModule;
 use SmartToolbox\Modules\Profile\ProfileRepository;
 use SmartToolbox\Modules\Quiz\MathQuestionGenerator;
@@ -988,6 +989,25 @@ try {
             windowSeconds: (int) $runtime->get(
                 'modules.developer.rate_limit.window_seconds',
                 60
+            )
+        ))->register($router);
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.mini_app.enabled',
+            true
+        )
+        && $features->isEnabled('mini_app')
+    ) {
+        (new MiniAppModule(
+            url: (string) $runtime->get(
+                'modules.mini_app.url',
+                'https://alirezanobakht2004.alwaysdata.net/app/'
+            ),
+            botUsername: (string) $config->get(
+                'telegram.username',
+                'SmartToolboxFaBot'
             )
         ))->register($router);
     }

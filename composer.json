@@ -26,11 +26,13 @@
         "release-five:test": "php scripts/test_release_five.php",
         "release-four:test": "php scripts/test_release_four.php",
         "release-one:test": "php scripts/test_release_one.php",
+        "release-six:test": "php scripts/test_release_six.php",
         "release-three:test": "php scripts/test_release_three.php",
         "release-two:test": "php scripts/test_release_two.php",
         "reminders:process": "php scripts/process_reminders.php",
         "reminders:test": "php scripts/test_reminders.php",
         "telegram:get-me": "php scripts/get_me.php",
+        "telegram:set-menu-button": "php scripts/set_menu_button.php",
         "telegram:set-webhook": "php scripts/set_webhook.php",
         "telegram:webhook-info": "php scripts/get_webhook_info.php",
         "v2:test": "php scripts/test_v2_foundation.php"

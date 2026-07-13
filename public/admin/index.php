@@ -804,6 +804,56 @@ if (
                 );
                 break;
 
+            case 'revoke_mini_app_session':
+                $service->revokeMiniAppSession(
+                    (int) (
+                        $_POST['session_id'] ?? 0
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'Session Mini App لغو شد.'
+                );
+                break;
+
+            case 'revoke_mini_app_user_sessions':
+                $count = $service
+                    ->revokeMiniAppUserSessions(
+                        (int) (
+                            $_POST['user_id'] ?? 0
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "{$count} Session کاربر لغو شد."
+                );
+                break;
+
+            case 'cleanup_mini_app':
+                $result = $service
+                    ->cleanupMiniApp(
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    'پاک‌سازی Mini App انجام شد: '
+                    . $result['sessions']
+                    . ' Session، '
+                    . $result['rate_limits']
+                    . ' Rate Limit و '
+                    . $result['audit']
+                    . ' Audit.'
+                );
+                break;
+
             case 'save_quiz_category':
                 $categoryId =
                     $service->saveQuizCategory(
@@ -1469,6 +1519,7 @@ $sections = [
     'reminders',
     'group_management',
     'quiz',
+    'mini_app',
     'automation',
     'logs',
     'system',
@@ -1498,6 +1549,7 @@ $stats = in_array(
         'reminders',
         'group_management',
         'quiz',
+        'mini_app',
         'automation',
     ],
     true
@@ -1517,6 +1569,7 @@ $navigation = [
     'reminders' => ['⏰', 'یادآورها'],
     'group_management' => ['🛡', 'مدیریت گروه‌ها'],
     'quiz' => ['🎯', 'مسابقه و آزمون'],
+    'mini_app' => ['📱', 'Mini App'],
     'automation' => ['🔔', 'هشدار و مانیتور'],
     'logs' => ['🧾', 'لاگ‌ها'],
     'system' => ['🩺', 'سیستم'],
@@ -1654,6 +1707,9 @@ $navigation = [
                 ['🎮', 'بازیکن مسابقه', $stats['quiz_players']],
                 ['✅', 'پاسخ امروز', $stats['quiz_answers_today']],
                 ['⏱', 'Quiz فعال', $stats['quiz_active_sessions']],
+                ['📱', 'Session فعال Mini App', $stats['mini_app_active_sessions']],
+                ['🔐', 'ورود Mini App امروز', $stats['mini_app_auth_today']],
+                ['🚫', 'خطای Mini App امروز', $stats['mini_app_failures_today']],
                 ['📈', 'رویداد امروز', $stats['usage_events_today']],
                 ['🧵', 'Job فعال', $stats['jobs_queued']],
                 ['💀', 'Dead Letter', $stats['dead_letters']],
@@ -3681,6 +3737,222 @@ $navigation = [
             </section>
 
 
+
+        <?php elseif ($section === 'mini_app'): ?>
+            <?php
+            $miniAppData = $service
+                ->miniAppOverview(150);
+            $miniSummary = $miniAppData[
+                'summary'
+            ];
+            ?>
+
+            <section class="metrics">
+                <?php foreach (
+                    [
+                        ['📱', 'Session فعال', $miniSummary['active_sessions']],
+                        ['👥', 'کاربران Session', $miniSummary['users_with_sessions']],
+                        ['🔐', 'ورود امروز', $miniSummary['auth_today']],
+                        ['⚡', 'درخواست امروز', $miniSummary['requests_today']],
+                        ['🚫', 'خطای امروز', $miniSummary['failures_today']],
+                        ['⏳', 'Rate Limit فعال', $miniSummary['rate_limit_keys']],
+                    ]
+                    as [$icon, $label, $value]
+                ): ?>
+                    <article class="metric-card">
+                        <span class="metric-icon"><?= $h($icon) ?></span>
+                        <div>
+                            <small><?= $h($label) ?></small>
+                            <strong><?= $number($value) ?></strong>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>امنیت و Sessionهای Mini App</h2>
+                        <p>
+                            Sessionهای احراز هویت‌شده، Audit و
+                            پاک‌سازی داده‌های منقضی
+                        </p>
+                    </div>
+                    <div class="actions">
+                        <a
+                            class="button secondary"
+                            href="<?= $h((string) $runtime->get('modules.mini_app.url', 'https://alirezanobakht2004.alwaysdata.net/app/')) ?>"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            بازکردن App
+                        </a>
+                        <form
+                            method="post"
+                            action="<?= $h($basePath) ?>/"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="<?= $h($csrf) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="action"
+                                value="cleanup_mini_app"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_section"
+                                value="mini_app"
+                            >
+                            <button
+                                class="button primary"
+                                type="submit"
+                            >
+                                اجرای Cleanup
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="notice">
+                    Token ربات، Session Token و CSRF Token در این صفحه
+                    نمایش داده نمی‌شوند؛ دیتابیس نیز فقط Hash آن‌ها را نگه می‌دارد.
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>آخرین Sessionها</h2>
+                        <p>لغو یک Session یا تمام Sessionهای یک کاربر</p>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>کاربر</th>
+                            <th>ساخته‌شده</th>
+                            <th>آخرین فعالیت</th>
+                            <th>انقضا</th>
+                            <th>وضعیت</th>
+                            <th>عملیات</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $miniAppData['sessions']
+                            as $row
+                        ): ?>
+                            <?php
+                            $sessionActive =
+                                $row['revoked_at'] === null
+                                && (int) $row['expires_at'] >= time()
+                                && (int) $row['absolute_expires_at'] >= time();
+                            $sessionName = trim(
+                                (string) ($row['first_name'] ?? '')
+                                . ' '
+                                . (string) ($row['last_name'] ?? '')
+                            );
+                            ?>
+                            <tr>
+                                <td>#<?= $h($row['id']) ?></td>
+                                <td>
+                                    <?= $h($sessionName !== '' ? $sessionName : 'کاربر') ?>
+                                    <small>
+                                        <?= $h($row['user_id']) ?>
+                                        <?= !empty($row['username']) ? ' · @' . $h($row['username']) : '' ?>
+                                    </small>
+                                </td>
+                                <td><?= $h(date('Y-m-d H:i:s', (int) $row['created_at'])) ?></td>
+                                <td><?= $h(date('Y-m-d H:i:s', (int) $row['last_seen_at'])) ?></td>
+                                <td><?= $h(date('Y-m-d H:i:s', (int) min($row['expires_at'], $row['absolute_expires_at']))) ?></td>
+                                <td>
+                                    <span class="badge <?= $sessionActive ? 'success' : 'neutral' ?>">
+                                        <?= $sessionActive ? 'فعال' : ($row['revoked_at'] !== null ? 'لغوشده' : 'منقضی') ?>
+                                    </span>
+                                    <?php if (!empty($row['revocation_reason'])): ?>
+                                        <small><?= $h($row['revocation_reason']) ?></small>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="actions">
+                                    <?php if ($sessionActive): ?>
+                                        <form method="post" action="<?= $h($basePath) ?>/">
+                                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                            <input type="hidden" name="action" value="revoke_mini_app_session">
+                                            <input type="hidden" name="return_section" value="mini_app">
+                                            <input type="hidden" name="session_id" value="<?= $h($row['id']) ?>">
+                                            <button class="button small danger" type="submit">لغو Session</button>
+                                        </form>
+                                        <form method="post" action="<?= $h($basePath) ?>/">
+                                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                            <input type="hidden" name="action" value="revoke_mini_app_user_sessions">
+                                            <input type="hidden" name="return_section" value="mini_app">
+                                            <input type="hidden" name="user_id" value="<?= $h($row['user_id']) ?>">
+                                            <button class="button small danger" type="submit">لغو همه</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>Audit Mini App</h2>
+                        <p>ورود، API، خطا و عملیات کاربر</p>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>زمان</th>
+                            <th>کاربر</th>
+                            <th>Action</th>
+                            <th>Resource</th>
+                            <th>نتیجه</th>
+                            <th>خطا / جزئیات</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $miniAppData['audit']
+                            as $row
+                        ): ?>
+                            <tr>
+                                <td>#<?= $h($row['id']) ?></td>
+                                <td><?= $h(date('Y-m-d H:i:s', (int) $row['occurred_at'])) ?></td>
+                                <td>
+                                    <?= $h(trim((string) ($row['first_name'] ?? '') . ' ' . (string) ($row['last_name'] ?? '')) ?: 'ناشناس') ?>
+                                    <small><?= $h($row['user_id'] ?? '—') ?></small>
+                                </td>
+                                <td><code><?= $h($row['action']) ?></code></td>
+                                <td>
+                                    <?= $h($row['resource_type'] ?? '—') ?>
+                                    <small><?= $h($row['resource_id'] ?? '') ?></small>
+                                </td>
+                                <td><?= (int) $row['success'] === 1 ? '✅' : '❌' ?></td>
+                                <td>
+                                    <code><?= $h($row['error_code'] ?? '') ?></code>
+                                    <small><?= $h(mb_substr((string) $row['details_json'], 0, 220)) ?></small>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
         <?php elseif ($section === 'quiz'): ?>
             <?php

@@ -19,6 +19,8 @@ use SmartToolbox\Modules\GroupManagement\GroupAuthorization;
 use SmartToolbox\Modules\GroupManagement\GroupModerationService;
 use SmartToolbox\Modules\GroupManagement\GroupRepository;
 use SmartToolbox\Modules\GroupManagement\GroupWorker;
+use SmartToolbox\Modules\MiniApp\MiniAppMaintenanceWorker;
+use SmartToolbox\Modules\MiniApp\MiniAppSessionRepository;
 use SmartToolbox\Modules\Quiz\QuizCsvService;
 use SmartToolbox\Modules\Quiz\QuizMaintenanceWorker;
 use SmartToolbox\Modules\Quiz\QuizRepository;
@@ -251,6 +253,33 @@ final class AdminPanelService
                  WHERE status = 'active'
                    AND expires_at >= :quiz_now",
                 ['quiz_now' => time()]
+            ),
+            'mini_app_active_sessions' => $this->count(
+                'SELECT COUNT(*)
+                 FROM mini_app_sessions
+                 WHERE revoked_at IS NULL
+                   AND expires_at >= :now
+                   AND absolute_expires_at >= :now',
+                ['now' => time()]
+            ),
+            'mini_app_auth_today' => $this->count(
+                "SELECT COUNT(*)
+                 FROM mini_app_audit_logs
+                 WHERE action = 'auth.login'
+                   AND success = 1
+                   AND occurred_at >= :today",
+                [
+                    'today' => strtotime('today'),
+                ]
+            ),
+            'mini_app_failures_today' => $this->count(
+                'SELECT COUNT(*)
+                 FROM mini_app_audit_logs
+                 WHERE success = 0
+                   AND occurred_at >= :today',
+                [
+                    'today' => strtotime('today'),
+                ]
             ),
             'usage_events_today' => $this->count(
                 'SELECT COUNT(*)
@@ -1107,6 +1136,245 @@ final class AdminPanelService
     }
 
 
+
+    /**
+     * @return array{
+     *     summary:array<string,int>,
+     *     sessions:list<array<string,mixed>>,
+     *     audit:list<array<string,mixed>>
+     * }
+     */
+    public function miniAppOverview(
+        int $limit = 100
+    ): array {
+        $limit = max(10, min(500, $limit));
+        $now = time();
+
+        $sessions = $this->pdo->prepare(
+            'SELECT
+                s.id,
+                s.user_id,
+                s.created_at,
+                s.last_seen_at,
+                s.expires_at,
+                s.absolute_expires_at,
+                s.revoked_at,
+                s.revocation_reason,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM mini_app_sessions AS s
+             LEFT JOIN users AS u
+                ON u.telegram_id = s.user_id
+             ORDER BY s.id DESC
+             LIMIT :limit'
+        );
+        $sessions->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+        $sessions->execute();
+
+        $audit = $this->pdo->prepare(
+            'SELECT
+                a.id,
+                a.user_id,
+                a.session_id,
+                a.action,
+                a.resource_type,
+                a.resource_id,
+                a.success,
+                a.error_code,
+                a.details_json,
+                a.occurred_at,
+                u.first_name,
+                u.last_name,
+                u.username
+             FROM mini_app_audit_logs AS a
+             LEFT JOIN users AS u
+                ON u.telegram_id = a.user_id
+             ORDER BY a.id DESC
+             LIMIT :limit'
+        );
+        $audit->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+        $audit->execute();
+
+        return [
+            'summary' => [
+                'active_sessions' => $this->count(
+                    'SELECT COUNT(*)
+                     FROM mini_app_sessions
+                     WHERE revoked_at IS NULL
+                       AND expires_at >= :now
+                       AND absolute_expires_at >= :now',
+                    ['now' => $now]
+                ),
+                'users_with_sessions' => $this->count(
+                    'SELECT COUNT(DISTINCT user_id)
+                     FROM mini_app_sessions'
+                ),
+                'auth_today' => $this->count(
+                    "SELECT COUNT(*)
+                     FROM mini_app_audit_logs
+                     WHERE action = 'auth.login'
+                       AND success = 1
+                       AND occurred_at >= :today",
+                    ['today' => strtotime('today')]
+                ),
+                'requests_today' => $this->count(
+                    'SELECT COUNT(*)
+                     FROM mini_app_audit_logs
+                     WHERE occurred_at >= :today',
+                    ['today' => strtotime('today')]
+                ),
+                'failures_today' => $this->count(
+                    'SELECT COUNT(*)
+                     FROM mini_app_audit_logs
+                     WHERE success = 0
+                       AND occurred_at >= :today',
+                    ['today' => strtotime('today')]
+                ),
+                'rate_limit_keys' => $this->count(
+                    'SELECT COUNT(*)
+                     FROM mini_app_rate_limits
+                     WHERE expires_at >= :now',
+                    ['now' => $now]
+                ),
+            ],
+            'sessions' => $sessions->fetchAll(
+                PDO::FETCH_ASSOC
+            ) ?: [],
+            'audit' => $audit->fetchAll(
+                PDO::FETCH_ASSOC
+            ) ?: [],
+        ];
+    }
+
+    public function revokeMiniAppSession(
+        int $sessionId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        if ($sessionId <= 0) {
+            throw new RuntimeException(
+                'شناسه Session معتبر نیست.'
+            );
+        }
+
+        if (!$this->miniAppSessions()
+            ->revokeSession(
+                $sessionId,
+                'web_admin'
+            )) {
+            throw new RuntimeException(
+                'Session فعال پیدا نشد.'
+            );
+        }
+
+        $this->audit(
+            $identity,
+            'mini_app.session_revoke',
+            (string) $sessionId,
+            [],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function revokeMiniAppUserSessions(
+        int $userId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        if ($userId <= 0) {
+            throw new RuntimeException(
+                'شناسه کاربر معتبر نیست.'
+            );
+        }
+
+        $count = $this->miniAppSessions()
+            ->revokeUserSessions(
+                $userId,
+                'web_admin_user_revoke'
+            );
+
+        $this->audit(
+            $identity,
+            'mini_app.user_sessions_revoke',
+            (string) $userId,
+            ['count' => $count],
+            $ip,
+            $userAgent
+        );
+
+        return $count;
+    }
+
+    /**
+     * @return array{sessions:int,rate_limits:int,audit:int}
+     */
+    public function cleanupMiniApp(
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): array {
+        $result = (
+            new MiniAppMaintenanceWorker(
+                $this->miniAppSessions()
+            )
+        )->run(
+            sessionRetentionDays: (int)
+                $this->runtime->get(
+                    'modules.mini_app.retention_days',
+                    30
+                ),
+            auditRetentionDays: (int)
+                $this->runtime->get(
+                    'modules.mini_app.audit_retention_days',
+                    180
+                )
+        );
+
+        $this->audit(
+            $identity,
+            'mini_app.cleanup',
+            'maintenance',
+            $result,
+            $ip,
+            $userAgent
+        );
+
+        return $result;
+    }
+
+    private function miniAppSessions(): MiniAppSessionRepository
+    {
+        return new MiniAppSessionRepository(
+            pdo: $this->pdo,
+            idleTtlSeconds: (int)
+                $this->runtime->get(
+                    'modules.mini_app.security.session_idle_ttl_seconds',
+                    1200
+                ),
+            absoluteTtlSeconds: (int)
+                $this->runtime->get(
+                    'modules.mini_app.security.session_absolute_ttl_seconds',
+                    21600
+                ),
+            maxActivePerUser: (int)
+                $this->runtime->get(
+                    'modules.mini_app.security.max_active_sessions_per_user',
+                    5
+                )
+        );
+    }
 
     /**
      * @return array{

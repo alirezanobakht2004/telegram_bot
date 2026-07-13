@@ -850,6 +850,111 @@ final class AdminSettingRegistry
                 2000
             ),
             ...$this->module(
+                'mini_app',
+                'Mini App کاربران',
+                [
+                    'retention_days' =>
+                        $this->integer(
+                            'نگهداری Sessionهای منقضی',
+                            1,
+                            3650,
+                            'روز'
+                        ),
+                    'audit_retention_days' =>
+                        $this->integer(
+                            'نگهداری Audit',
+                            7,
+                            3650,
+                            'روز'
+                        ),
+                    'security.init_data_max_age_seconds' =>
+                        $this->integer(
+                            'حداکثر عمر initData',
+                            30,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'security.auth_date_future_skew_seconds' =>
+                        $this->integer(
+                            'تلورانس زمان آینده auth_date',
+                            0,
+                            300,
+                            'ثانیه'
+                        ),
+                    'security.max_init_data_bytes' =>
+                        $this->integer(
+                            'حداکثر حجم initData',
+                            1024,
+                            65536,
+                            'بایت'
+                        ),
+                    'security.max_request_bytes' =>
+                        $this->integer(
+                            'حداکثر حجم درخواست API',
+                            1024,
+                            1048576,
+                            'بایت'
+                        ),
+                    'security.session_idle_ttl_seconds' =>
+                        $this->integer(
+                            'انقضای بیکاری Session',
+                            300,
+                            3600,
+                            'ثانیه'
+                        ),
+                    'security.session_absolute_ttl_seconds' =>
+                        $this->integer(
+                            'عمر مطلق Session',
+                            300,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'security.max_active_sessions_per_user' =>
+                        $this->integer(
+                            'Session فعال هر کاربر',
+                            1,
+                            20,
+                            'Session'
+                        ),
+                    'rate_limit.auth_max_attempts' =>
+                        $this->integer(
+                            'حداکثر تلاش احراز هویت',
+                            1,
+                            100,
+                            'درخواست'
+                        ),
+                    'rate_limit.auth_window_seconds' =>
+                        $this->integer(
+                            'پنجره Rate Limit احراز هویت',
+                            1,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'rate_limit.api_max_attempts' =>
+                        $this->integer(
+                            'حداکثر درخواست API',
+                            1,
+                            1000,
+                            'درخواست'
+                        ),
+                    'rate_limit.api_window_seconds' =>
+                        $this->integer(
+                            'پنجره Rate Limit API',
+                            1,
+                            86400,
+                            'ثانیه'
+                        ),
+                    'worker.interval_seconds' =>
+                        $this->integer(
+                            'فاصله Maintenance',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                ],
+                null
+            ),
+            ...$this->module(
                 'group_management',
                 'مدیریت حرفه‌ای گروه‌ها',
                 [

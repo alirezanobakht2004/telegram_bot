@@ -154,6 +154,11 @@ return [
                 'rollout_percentage' => 100,
                 'description' => 'Quiz, trivia, math and word games with scoring, streaks and leaderboards.',
             ],
+            'mini_app' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Authenticated Telegram Mini App dashboard and self-service API.',
+            ],
         ],
     ],
 
@@ -438,6 +443,36 @@ return [
             'rate_limit' => [
                 'max_attempts' => 30,
                 'window_seconds' => 60,
+            ],
+        ],
+
+
+        'mini_app' => [
+            'enabled' => true,
+            'url' => 'https://alirezanobakht2004.alwaysdata.net/app/',
+            'retention_days' => 30,
+            'audit_retention_days' => 180,
+
+            'security' => [
+                'cookie_name' => '__Secure-smarttoolbox-mini',
+                'init_data_max_age_seconds' => 300,
+                'auth_date_future_skew_seconds' => 30,
+                'max_init_data_bytes' => 16384,
+                'max_request_bytes' => 131072,
+                'session_idle_ttl_seconds' => 1200,
+                'session_absolute_ttl_seconds' => 21600,
+                'max_active_sessions_per_user' => 5,
+            ],
+
+            'rate_limit' => [
+                'auth_max_attempts' => 20,
+                'auth_window_seconds' => 300,
+                'api_max_attempts' => 120,
+                'api_window_seconds' => 60,
+            ],
+
+            'worker' => [
+                'interval_seconds' => 3600,
             ],
         ],
 

@@ -127,6 +127,7 @@ final class CoreModule implements ModuleInterface
                     . "🔔 هشدارها و اشتراک‌ها\n"
                     . "📡 مانیتورینگ سایت\n"
                     . "🎯 مسابقه، آزمون و امتیاز\n"
+                    . "📱 Mini App کاربران\n"
                     . "🧮 ماشین حساب و تبدیل واحد\n"
                     . "📚 ویکی‌پدیا\n"
                     . "🐙 GitHub و Release Watch\n"
@@ -170,6 +171,8 @@ final class CoreModule implements ModuleInterface
             . "/quiz، /trivia، /mathgame، /wordgame\n"
             . "/dailychallenge، /leaderboard\n"
             . "/myscore، /achievements، /streak\n\n"
+            . "Mini App:\n"
+            . "/app یا /miniapp — داشبورد گرافیکی کاربران\n\n"
             . "/favorite weather Tehran — علاقه‌مندی\n"
             . "/favorites — فهرست علاقه‌مندی‌ها\n"
             . "/setshortcut office weather Tehran — میان‌بر\n"
@@ -258,6 +261,7 @@ final class CoreModule implements ModuleInterface
             'monitoring',
             'file_tools',
             'quiz',
+            'mini_app',
             'calculator',
             'tools',
             'developer',
@@ -323,6 +327,7 @@ final class CoreModule implements ModuleInterface
             'monitoring' => '📡 مانیتورینگ',
             'file_tools' => '📁 فایل و تصویر',
             'quiz' => '🎯 مسابقه و آزمون',
+            'mini_app' => '📱 اپ کاربران',
             'calculator' => '🧮 ماشین حساب',
             'tools' => '🧰 ابزارها',
             'developer' => '🧑‍💻 توسعه‌دهنده',
