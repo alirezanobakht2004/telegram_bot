@@ -45,6 +45,9 @@ use SmartToolbox\Modules\GroupManagement\GroupWorker;
 use SmartToolbox\Modules\Monitoring\MonitorProbe;
 use SmartToolbox\Modules\Monitoring\MonitorRepository;
 use SmartToolbox\Modules\Monitoring\MonitorWorker;
+use SmartToolbox\Modules\Quiz\QuizMaintenanceWorker;
+use SmartToolbox\Modules\Quiz\QuizRepository;
+use SmartToolbox\Modules\Quiz\QuizScoring;
 
 $rootPath = dirname(__DIR__);
 
@@ -373,6 +376,57 @@ try {
                     'modules.group_management.retention_days',
                     180
                 )
+            );
+        }
+    );
+
+    $quizRepository = new QuizRepository(
+        pdo: $pdo,
+        scoring: new QuizScoring(
+            timeBonusMaxPercent: (int)
+                $runtime->get(
+                    'modules.quiz_games.scoring.time_bonus_max_percent',
+                    50
+                ),
+            streakBonusPercent: (int)
+                $runtime->get(
+                    'modules.quiz_games.scoring.streak_bonus_percent',
+                    5
+                ),
+            participationXp: (int)
+                $runtime->get(
+                    'modules.quiz_games.scoring.participation_xp',
+                    1
+                ),
+            xpPerLevel: (int)
+                $runtime->get(
+                    'modules.quiz_games.scoring.xp_per_level',
+                    100
+                )
+        )
+    );
+
+    $quizWorker = new QuizMaintenanceWorker(
+        $quizRepository
+    );
+
+    $runner->register(
+        'quiz.maintenance',
+        static function () use (
+            $quizWorker,
+            $runtime
+        ): void {
+            $quizWorker->run(
+                batchSize: (int)
+                    $runtime->get(
+                        'modules.quiz_games.worker.batch_size',
+                        200
+                    ),
+                retentionDays: (int)
+                    $runtime->get(
+                        'modules.quiz_games.retention_days',
+                        180
+                    )
             );
         }
     );
@@ -789,6 +843,34 @@ try {
             maxAttempts: $defaultMaxAttempts,
             uniqueKey: 'monitoring-reports:'
                 . intdiv(time(), $reportInterval)
+        );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.quiz_games.enabled',
+            true
+        )
+        && $features->isEnabled(
+            'quiz_games'
+        )
+    ) {
+        $quizInterval = max(
+            60,
+            (int) $runtime->get(
+                'modules.quiz_games.worker.interval_seconds',
+                300
+            )
+        );
+
+        $queue->enqueue(
+            jobType: 'quiz.maintenance',
+            maxAttempts: $defaultMaxAttempts,
+            uniqueKey: 'quiz-maintenance:'
+                . intdiv(
+                    time(),
+                    $quizInterval
+                )
         );
     }
 
