@@ -7,7 +7,11 @@ namespace SmartToolbox\Web;
 use JsonException;
 use PDO;
 use RuntimeException;
+use SmartToolbox\Core\AnalyticsMaintenance;
+use SmartToolbox\Core\DeadLetterQueue;
+use SmartToolbox\Core\FeatureRegistry;
 use SmartToolbox\Core\FileCache;
+use SmartToolbox\Core\JobQueue;
 use SmartToolbox\Core\RuntimeSettings;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Modules\Reminders\ReminderWorker;
@@ -160,6 +164,36 @@ final class AdminPanelService
                 "SELECT COUNT(*)
                  FROM reminders
                  WHERE status = 'failed'"
+            ),
+            'usage_events_today' => $this->count(
+                'SELECT COUNT(*)
+                 FROM usage_events
+                 WHERE occurred_at >= :today',
+                [
+                    'today' => strtotime('today'),
+                ]
+            ),
+            'usage_failures_today' => $this->count(
+                'SELECT COUNT(*)
+                 FROM usage_events
+                 WHERE success = 0
+                   AND occurred_at >= :today',
+                [
+                    'today' => strtotime('today'),
+                ]
+            ),
+            'jobs_queued' => $this->count(
+                "SELECT COUNT(*)
+                 FROM job_queue
+                 WHERE status IN (
+                    'queued',
+                    'processing'
+                 )"
+            ),
+            'dead_letters' => $this->count(
+                'SELECT COUNT(*)
+                 FROM dead_letter_jobs
+                 WHERE replayed_at IS NULL'
             ),
             'runtime_overrides' => count(
                 $this->runtime->allOverrides()
@@ -1841,6 +1875,635 @@ final class AdminPanelService
                 DATE_ATOM
             ),
         ]);
+    }
+
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function analytics(
+        int $days = 30
+    ): array {
+        $days = max(1, min(365, $days));
+        $cutoff = time() - ($days * 86400);
+
+        $summaryStatement = $this->pdo->prepare(
+            'SELECT
+                COUNT(*) AS events,
+                COUNT(DISTINCT user_id) AS unique_users,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(MAX(duration_ms), 0) AS max_duration_ms,
+                COALESCE(AVG(success) * 100, 100) AS success_rate
+             FROM usage_events
+             WHERE occurred_at >= :cutoff'
+        );
+
+        $summaryStatement->execute([
+            'cutoff' => $cutoff,
+        ]);
+
+        $summary = $summaryStatement->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!is_array($summary)) {
+            $summary = [];
+        }
+
+        $apiStatement = $this->pdo->prepare(
+            'SELECT
+                COUNT(*) AS calls,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failures,
+                COALESCE(SUM(response_bytes), 0) AS response_bytes
+             FROM api_metrics
+             WHERE occurred_at >= :cutoff'
+        );
+
+        $apiStatement->execute([
+            'cutoff' => $cutoff,
+        ]);
+
+        $apiSummary = $apiStatement->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!is_array($apiSummary)) {
+            $apiSummary = [];
+        }
+
+        $cacheStatement = $this->pdo->prepare(
+            "SELECT
+                COUNT(*) AS operations,
+                COALESCE(SUM(CASE WHEN operation = 'get' AND hit = 1 THEN 1 ELSE 0 END), 0) AS hits,
+                COALESCE(SUM(CASE WHEN operation = 'get' AND hit = 0 THEN 1 ELSE 0 END), 0) AS misses
+             FROM cache_metrics
+             WHERE occurred_at >= :cutoff"
+        );
+
+        $cacheStatement->execute([
+            'cutoff' => $cutoff,
+        ]);
+
+        $cacheSummary = $cacheStatement->fetch(
+            PDO::FETCH_ASSOC
+        );
+
+        if (!is_array($cacheSummary)) {
+            $cacheSummary = [];
+        }
+
+        $hits = (int) ($cacheSummary['hits'] ?? 0);
+        $misses = (int) ($cacheSummary['misses'] ?? 0);
+
+        return [
+            'days' => $days,
+            'summary' => [
+                'events' => (int) ($summary['events'] ?? 0),
+                'unique_users' => (int) ($summary['unique_users'] ?? 0),
+                'avg_duration_ms' => round(
+                    (float) ($summary['avg_duration_ms'] ?? 0),
+                    2
+                ),
+                'max_duration_ms' => round(
+                    (float) ($summary['max_duration_ms'] ?? 0),
+                    2
+                ),
+                'success_rate' => round(
+                    (float) ($summary['success_rate'] ?? 100),
+                    2
+                ),
+                'api_calls' => (int) ($apiSummary['calls'] ?? 0),
+                'api_avg_duration_ms' => round(
+                    (float) ($apiSummary['avg_duration_ms'] ?? 0),
+                    2
+                ),
+                'api_failures' => (int) ($apiSummary['failures'] ?? 0),
+                'api_response_bytes' => (int) ($apiSummary['response_bytes'] ?? 0),
+                'cache_operations' => (int) ($cacheSummary['operations'] ?? 0),
+                'cache_hits' => $hits,
+                'cache_misses' => $misses,
+                'cache_hit_rate' => ($hits + $misses) > 0
+                    ? round($hits * 100 / ($hits + $misses), 2)
+                    : 0.0,
+            ],
+            'daily' => $this->analyticsDaily($cutoff),
+            'commands' => $this->analyticsCommands($cutoff),
+            'modules' => $this->analyticsModules($cutoff),
+            'errors' => $this->analyticsErrors($cutoff),
+            'api' => $this->analyticsApi($cutoff),
+            'cache' => $this->analyticsCache($cutoff),
+            'hours' => $this->analyticsHours($cutoff),
+            'retention' => $this->analyticsRetention(),
+            'jobs' => $this->jobOverview(),
+            'recent_jobs' => $this->recentJobs(30),
+            'dead_letters' => $this->recentDeadLetters(30),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function featureFlags(): array
+    {
+        return $this->featureRegistry()->all();
+    }
+
+    public function saveFeatureFlag(
+        string $key,
+        bool $enabled,
+        int $rolloutPercentage,
+        string $description,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $old = $this->featureRegistry()->get($key);
+
+        $this->featureRegistry()->set(
+            $key,
+            $enabled,
+            $rolloutPercentage,
+            $description,
+            $identity
+        );
+
+        $this->audit(
+            $identity,
+            'feature.update',
+            $key,
+            [
+                'old' => $old,
+                'enabled' => $enabled,
+                'rollout_percentage' => $rolloutPercentage,
+            ],
+            $ip,
+            $userAgent
+        );
+    }
+
+    public function resetFeatureFlag(
+        string $key,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): bool {
+        $deleted = $this->featureRegistry()->reset($key);
+
+        if ($deleted) {
+            $this->audit(
+                $identity,
+                'feature.reset',
+                $key,
+                [],
+                $ip,
+                $userAgent
+            );
+        }
+
+        return $deleted;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    public function cleanupAnalytics(
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): array {
+        $maintenance = new AnalyticsMaintenance(
+            $this->pdo
+        );
+
+        $result = $maintenance->cleanup(
+            usageDays: (int) $this->runtime->get(
+                'analytics.retention.usage_days',
+                90
+            ),
+            commandDays: (int) $this->runtime->get(
+                'analytics.retention.command_days',
+                30
+            ),
+            apiDays: (int) $this->runtime->get(
+                'analytics.retention.api_days',
+                30
+            ),
+            cacheDays: (int) $this->runtime->get(
+                'analytics.retention.cache_days',
+                30
+            ),
+            jobRunDays: (int) $this->runtime->get(
+                'analytics.retention.job_run_days',
+                30
+            ),
+            deadLetterDays: (int) $this->runtime->get(
+                'analytics.retention.dead_letter_days',
+                90
+            ),
+            maxUsageRows: (int) $this->runtime->get(
+                'analytics.retention.max_usage_rows',
+                250000
+            )
+        );
+
+        $this->audit(
+            $identity,
+            'analytics.cleanup',
+            'analytics',
+            $result,
+            $ip,
+            $userAgent
+        );
+
+        return $result;
+    }
+
+    public function replayDeadLetter(
+        int $deadLetterId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        $queue = new JobQueue($this->pdo);
+        $deadLetters = new DeadLetterQueue(
+            $this->pdo,
+            $queue
+        );
+
+        $jobId = $deadLetters->replay(
+            $deadLetterId
+        );
+
+        $this->audit(
+            $identity,
+            'job.dead_letter_replay',
+            (string) $deadLetterId,
+            [
+                'new_job_id' => $jobId,
+            ],
+            $ip,
+            $userAgent
+        );
+
+        return $jobId;
+    }
+
+    public function cancelJob(
+        int $jobId,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): bool {
+        $cancelled = (new JobQueue(
+            $this->pdo
+        ))->cancel($jobId);
+
+        if ($cancelled) {
+            $this->audit(
+                $identity,
+                'job.cancel',
+                (string) $jobId,
+                [],
+                $ip,
+                $userAgent
+            );
+        }
+
+        return $cancelled;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsDaily(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+                substr(created_at, 1, 10) AS day,
+                COUNT(*) AS events,
+                COUNT(DISTINCT user_id) AS users,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(AVG(success) * 100, 100) AS success_rate
+             FROM usage_events
+             WHERE occurred_at >= :cutoff
+             GROUP BY day
+             ORDER BY day ASC'
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsCommands(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT
+                module,
+                command,
+                source,
+                COUNT(*) AS total,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(AVG(success) * 100, 100) AS success_rate
+             FROM command_history
+             WHERE occurred_at >= :cutoff
+             GROUP BY module, command, source
+             ORDER BY total DESC
+             LIMIT 30"
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsModules(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+                module,
+                COUNT(*) AS events,
+                COUNT(DISTINCT user_id) AS users,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(MAX(duration_ms), 0) AS max_duration_ms,
+                COALESCE(AVG(success) * 100, 100) AS success_rate
+             FROM usage_events
+             WHERE occurred_at >= :cutoff
+             GROUP BY module
+             ORDER BY events DESC'
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsErrors(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT
+                module,
+                action,
+                COALESCE(error_code, 'unknown') AS error_code,
+                MAX(error_message) AS error_message,
+                COUNT(*) AS total,
+                MAX(created_at) AS last_seen_at
+             FROM usage_events
+             WHERE occurred_at >= :cutoff
+               AND success = 0
+             GROUP BY module, action, error_code
+             ORDER BY total DESC, last_seen_at DESC
+             LIMIT 30"
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsApi(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+                provider,
+                host,
+                path,
+                COUNT(*) AS calls,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(MAX(duration_ms), 0) AS max_duration_ms,
+                COALESCE(SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END), 0) AS failures,
+                COALESCE(SUM(response_bytes), 0) AS response_bytes
+             FROM api_metrics
+             WHERE occurred_at >= :cutoff
+             GROUP BY provider, host, path
+             ORDER BY calls DESC
+             LIMIT 30'
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsCache(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT
+                namespace,
+                COUNT(*) AS operations,
+                COALESCE(SUM(CASE WHEN operation = 'get' AND hit = 1 THEN 1 ELSE 0 END), 0) AS hits,
+                COALESCE(SUM(CASE WHEN operation = 'get' AND hit = 0 THEN 1 ELSE 0 END), 0) AS misses,
+                COALESCE(AVG(duration_ms), 0) AS avg_duration_ms,
+                COALESCE(SUM(value_bytes), 0) AS value_bytes
+             FROM cache_metrics
+             WHERE occurred_at >= :cutoff
+             GROUP BY namespace
+             ORDER BY operations DESC"
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function analyticsHours(int $cutoff): array
+    {
+        $statement = $this->pdo->prepare(
+            "SELECT
+                strftime('%H', created_at) AS hour,
+                COUNT(*) AS events,
+                COUNT(DISTINCT user_id) AS users
+             FROM usage_events
+             WHERE occurred_at >= :cutoff
+             GROUP BY hour
+             ORDER BY hour ASC"
+        );
+
+        $statement->execute(['cutoff' => $cutoff]);
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return array<string, array{eligible: int, retained: int, rate: float}>
+     */
+    private function analyticsRetention(): array
+    {
+        $result = [];
+
+        foreach ([1, 7, 30] as $days) {
+            $statement = $this->pdo->prepare(
+                'SELECT
+                    COUNT(*) AS eligible,
+                    COALESCE(SUM(
+                        CASE
+                            WHEN julianday(last_seen_at)
+                                >= julianday(first_seen_at, :offset)
+                            THEN 1
+                            ELSE 0
+                        END
+                    ), 0) AS retained
+                 FROM users
+                 WHERE julianday(first_seen_at)
+                    <= julianday(\'now\', :negative_offset)'
+            );
+
+            $statement->execute([
+                'offset' => '+' . $days . ' days',
+                'negative_offset' => '-' . $days . ' days',
+            ]);
+
+            $row = $statement->fetch(PDO::FETCH_ASSOC);
+            $eligible = is_array($row)
+                ? (int) ($row['eligible'] ?? 0)
+                : 0;
+            $retained = is_array($row)
+                ? (int) ($row['retained'] ?? 0)
+                : 0;
+
+            $result['d' . $days] = [
+                'eligible' => $eligible,
+                'retained' => $retained,
+                'rate' => $eligible > 0
+                    ? round($retained * 100 / $eligible, 2)
+                    : 0.0,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, int>
+     */
+    private function jobOverview(): array
+    {
+        return [
+            'queued' => $this->count(
+                "SELECT COUNT(*) FROM job_queue WHERE status = 'queued'"
+            ),
+            'processing' => $this->count(
+                "SELECT COUNT(*) FROM job_queue WHERE status = 'processing'"
+            ),
+            'completed' => $this->count(
+                "SELECT COUNT(*) FROM job_queue WHERE status = 'completed'"
+            ),
+            'dead' => $this->count(
+                "SELECT COUNT(*) FROM job_queue WHERE status = 'dead'"
+            ),
+            'dead_letters' => $this->count(
+                'SELECT COUNT(*) FROM dead_letter_jobs WHERE replayed_at IS NULL'
+            ),
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function recentJobs(int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+                id,
+                job_type,
+                unique_key,
+                status,
+                priority,
+                available_at,
+                attempts,
+                max_attempts,
+                locked_by,
+                locked_at,
+                last_error,
+                created_at,
+                updated_at,
+                completed_at
+             FROM job_queue
+             ORDER BY id DESC
+             LIMIT :limit'
+        );
+
+        $statement->bindValue(
+            ':limit',
+            max(1, min(100, $limit)),
+            PDO::PARAM_INT
+        );
+        $statement->execute();
+
+        return $this->rows($statement);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function recentDeadLetters(int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT
+                id,
+                original_job_id,
+                job_type,
+                unique_key,
+                attempts,
+                error_message,
+                failed_at,
+                replayed_at,
+                replay_job_id
+             FROM dead_letter_jobs
+             ORDER BY id DESC
+             LIMIT :limit'
+        );
+
+        $statement->bindValue(
+            ':limit',
+            max(1, min(100, $limit)),
+            PDO::PARAM_INT
+        );
+        $statement->execute();
+
+        return $this->rows($statement);
+    }
+
+    private function featureRegistry(): FeatureRegistry
+    {
+        return new FeatureRegistry(
+            $this->pdo,
+            (array) $this->runtime->base(
+                'features.defaults',
+                []
+            )
+        );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function rows(\PDOStatement $statement): array
+    {
+        $rows = $statement->fetchAll(PDO::FETCH_ASSOC);
+
+        return is_array($rows)
+            ? $rows
+            : [];
     }
 
     /**

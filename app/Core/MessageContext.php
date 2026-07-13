@@ -12,7 +12,9 @@ final readonly class MessageContext
         public ?int $userId,
         public string $firstName,
         public string $text,
-        private TelegramClient $telegram
+        private TelegramClient $telegram,
+        public ?UpdateContext $updateContext = null,
+        public ?int $messageId = null
     ) {
     }
 
@@ -25,6 +27,19 @@ final readonly class MessageContext
         string $text,
         array $options = []
     ): array {
+        if (
+            $this->messageId !== null
+            && !array_key_exists(
+                'reply_parameters',
+                $options
+            )
+        ) {
+            $options['reply_parameters'] = [
+                'message_id' => $this->messageId,
+                'allow_sending_without_reply' => true,
+            ];
+        }
+
         return $this->telegram->sendMessage(
             $this->chatId,
             $text,
@@ -47,6 +62,19 @@ final readonly class MessageContext
             && !array_key_exists('caption', $options)
         ) {
             $options['caption'] = $caption;
+        }
+
+        if (
+            $this->messageId !== null
+            && !array_key_exists(
+                'reply_parameters',
+                $options
+            )
+        ) {
+            $options['reply_parameters'] = [
+                'message_id' => $this->messageId,
+                'allow_sending_without_reply' => true,
+            ];
         }
 
         return $this->telegram->sendPhoto(

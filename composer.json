@@ -19,12 +19,14 @@
     },
     "scripts": {
         "check": "php scripts/check.php",
+        "jobs:process": "php scripts/process_jobs.php",
         "migrate": "php scripts/migrate.php",
         "reminders:process": "php scripts/process_reminders.php",
         "reminders:test": "php scripts/test_reminders.php",
         "telegram:get-me": "php scripts/get_me.php",
         "telegram:set-webhook": "php scripts/set_webhook.php",
-        "telegram:webhook-info": "php scripts/get_webhook_info.php"
+        "telegram:webhook-info": "php scripts/get_webhook_info.php",
+        "v2:test": "php scripts/test_v2_foundation.php"
     },
     "config": {
         "sort-packages": true,

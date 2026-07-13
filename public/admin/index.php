@@ -8,6 +8,7 @@ use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Web\AdminAuth;
 use SmartToolbox\Web\AdminPanelService;
 use SmartToolbox\Web\AdminSettingRegistry;
+use SmartToolbox\Web\AnalyticsCsvExporter;
 
 $rootPath = dirname(__DIR__, 2);
 
@@ -274,6 +275,72 @@ if (
 }
 
 if (
+    $auth->authenticated($userAgent)
+    && ($_GET['export_analytics'] ?? '')
+        !== ''
+) {
+    try {
+        $dataset = (string) $_GET[
+            'export_analytics'
+        ];
+
+        $days = max(
+            1,
+            min(
+                365,
+                (int) (
+                    $_GET['days'] ?? 30
+                )
+            )
+        );
+
+        $filename = sprintf(
+            'analytics-%s-%dd-%s.csv',
+            preg_replace(
+                '/[^a-z_]/',
+                '',
+                $dataset
+            ) ?: 'export',
+            $days,
+            date('Ymd-His')
+        );
+
+        header(
+            'Content-Type: text/csv; charset=utf-8'
+        );
+        header(
+            'Content-Disposition: attachment; filename="'
+            . $filename
+            . '"'
+        );
+
+        $stream = fopen(
+            'php://output',
+            'wb'
+        );
+
+        if ($stream === false) {
+            throw new RuntimeException(
+                'CSV output stream could not be opened.'
+            );
+        }
+
+        (new AnalyticsCsvExporter($pdo))->stream(
+            $dataset,
+            $days,
+            $stream
+        );
+
+        fclose($stream);
+        exit;
+    } catch (Throwable $exception) {
+        http_response_code(400);
+        echo $h($exception->getMessage());
+        exit;
+    }
+}
+
+if (
     ($_SERVER['REQUEST_METHOD'] ?? 'GET')
     === 'POST'
     && ($_POST['action'] ?? '')
@@ -332,6 +399,10 @@ if (!$auth->authenticated($userAgent)) {
         rel="stylesheet"
         href="<?= $h($basePath) ?>/assets/admin.css"
     >
+    <script
+        src="<?= $h($basePath) ?>/assets/admin.js"
+        defer
+    ></script>
 </head>
 <body class="login-page">
 <main class="login-card">
@@ -693,6 +764,107 @@ if (
                 );
                 break;
 
+            case 'cleanup_analytics':
+                $result =
+                    $service->cleanupAnalytics(
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    'پاک‌سازی Analytics انجام شد؛ مجموع حذف: '
+                    . array_sum($result)
+                );
+                break;
+
+            case 'save_feature_flag':
+                $service->saveFeatureFlag(
+                    (string) (
+                        $_POST['flag_key']
+                        ?? ''
+                    ),
+                    (string) (
+                        $_POST['enabled']
+                        ?? '0'
+                    ) === '1',
+                    (int) (
+                        $_POST[
+                            'rollout_percentage'
+                        ] ?? 100
+                    ),
+                    (string) (
+                        $_POST['description']
+                        ?? ''
+                    ),
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'Feature Flag ذخیره شد.'
+                );
+                break;
+
+            case 'reset_feature_flag':
+                $deleted =
+                    $service->resetFeatureFlag(
+                        (string) (
+                            $_POST['flag_key']
+                            ?? ''
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    $deleted
+                        ? 'Feature Flag به مقدار config برگشت.'
+                        : 'Override برای این Feature وجود نداشت.'
+                );
+                break;
+
+            case 'replay_dead_letter':
+                $jobId =
+                    $service->replayDeadLetter(
+                        (int) (
+                            $_POST[
+                                'dead_letter_id'
+                            ] ?? 0
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "Job جدید #{$jobId} ساخته شد."
+                );
+                break;
+
+            case 'cancel_job':
+                $cancelled =
+                    $service->cancelJob(
+                        (int) (
+                            $_POST['job_id']
+                            ?? 0
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    $cancelled
+                        ? 'success'
+                        : 'error',
+                    $cancelled
+                        ? 'Job لغو شد.'
+                        : 'Job قابل لغو پیدا نشد.'
+                );
+                break;
+
             case 'clear_log':
                 $service->clearLog(
                     (string) (
@@ -809,6 +981,8 @@ if (
 
 $sections = [
     'dashboard',
+    'analytics',
+    'features',
     'settings',
     'cache',
     'users',
@@ -836,10 +1010,18 @@ if (
 
 $csrf = $auth->csrfToken();
 $flashMessage = $consumeFlash();
-$stats = $service->dashboard();
+$stats = in_array(
+    $section,
+    ['dashboard', 'reminders'],
+    true
+)
+    ? $service->dashboard()
+    : [];
 
 $navigation = [
     'dashboard' => ['📊', 'داشبورد'],
+    'analytics' => ['📈', 'Analytics'],
+    'features' => ['🚩', 'Feature Flags'],
     'settings' => ['⚙️', 'تنظیمات'],
     'cache' => ['🗃', 'کش'],
     'users' => ['👥', 'کاربران'],
@@ -865,6 +1047,10 @@ $navigation = [
         rel="stylesheet"
         href="<?= $h($basePath) ?>/assets/admin.css"
     >
+    <script
+        src="<?= $h($basePath) ?>/assets/admin.js"
+        defer
+    ></script>
 </head>
 <body>
 <div class="app-shell">
@@ -943,7 +1129,6 @@ $navigation = [
 
         <?php if ($section === 'dashboard'): ?>
             <?php
-            $stats = $service->dashboard();
             $activity = $service->activity();
             $maximum = 1;
 
@@ -966,6 +1151,9 @@ $navigation = [
                 ['💬', 'چت فعال', $stats['chats_active']],
                 ['📣', 'Broadcast فعال', $stats['broadcasts_active']],
                 ['⏰', 'یادآور فعال', $stats['reminders_pending']],
+                ['📈', 'رویداد امروز', $stats['usage_events_today']],
+                ['🧵', 'Job فعال', $stats['jobs_queued']],
+                ['💀', 'Dead Letter', $stats['dead_letters']],
                 ['⚙️', 'Override فعال', $stats['runtime_overrides']],
                 ['🗃', 'فایل کش', $stats['cache_files']],
                 ['💾', 'حجم دیتابیس', $bytes($stats['database_bytes'])],
@@ -1088,6 +1276,640 @@ $navigation = [
                         </div>
                     </dl>
                 </article>
+            </section>
+
+        <?php elseif ($section === 'analytics'): ?>
+            <?php
+            $analyticsDays = max(
+                1,
+                min(
+                    365,
+                    (int) (
+                        $_GET['days'] ?? 30
+                    )
+                )
+            );
+
+            $analytics = $service->analytics(
+                $analyticsDays
+            );
+
+            $analyticsSummary =
+                $analytics['summary'];
+
+            $dailyRows = array_slice(
+                $analytics['daily'],
+                -14
+            );
+
+            $dailyMaximum = 1;
+
+            foreach ($dailyRows as $row) {
+                $dailyMaximum = max(
+                    $dailyMaximum,
+                    (int) $row['events'],
+                    (int) $row['users']
+                );
+            }
+
+            $analyticsCards = [
+                [
+                    '📈',
+                    'رویدادها',
+                    $analyticsSummary['events'],
+                ],
+                [
+                    '👥',
+                    'کاربران یکتا',
+                    $analyticsSummary['unique_users'],
+                ],
+                [
+                    '✅',
+                    'نرخ موفقیت',
+                    $analyticsSummary['success_rate'] . '%',
+                ],
+                [
+                    '⏱',
+                    'میانگین زمان',
+                    $analyticsSummary['avg_duration_ms'] . ' ms',
+                ],
+                [
+                    '🌐',
+                    'API Call',
+                    $analyticsSummary['api_calls'],
+                ],
+                [
+                    '⚠️',
+                    'API Failure',
+                    $analyticsSummary['api_failures'],
+                ],
+                [
+                    '🗃',
+                    'Cache Hit Rate',
+                    $analyticsSummary['cache_hit_rate'] . '%',
+                ],
+                [
+                    '💾',
+                    'حجم پاسخ API',
+                    $bytes(
+                        $analyticsSummary[
+                            'api_response_bytes'
+                        ]
+                    ),
+                ],
+            ];
+            ?>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>تحلیل رفتار و عملکرد</h2>
+                        <p>
+                            رویدادها، فرمان‌ها، Cache، API،
+                            Retention و صف Job
+                        </p>
+                    </div>
+
+                    <form
+                        method="get"
+                        action="<?= $h($basePath) ?>/"
+                        class="search-form"
+                    >
+                        <input
+                            type="hidden"
+                            name="section"
+                            value="analytics"
+                        >
+                        <select name="days">
+                            <?php foreach (
+                                [7, 14, 30, 60, 90, 180, 365]
+                                as $optionDays
+                            ): ?>
+                                <option
+                                    value="<?= $optionDays ?>"
+                                    <?= $analyticsDays === $optionDays ? 'selected' : '' ?>
+                                >
+                                    <?= $optionDays ?> روز
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <button
+                            class="button primary"
+                            type="submit"
+                        >
+                            اعمال
+                        </button>
+                    </form>
+                </div>
+
+                <div class="action-grid">
+                    <?php foreach (
+                        [
+                            'daily' => 'روزانه',
+                            'commands' => 'فرمان‌ها',
+                            'modules' => 'ماژول‌ها',
+                            'api' => 'API',
+                            'cache' => 'Cache',
+                            'errors' => 'خطاها',
+                            'raw' => 'Raw Events',
+                        ]
+                        as $dataset => $label
+                    ): ?>
+                        <a
+                            class="button secondary"
+                            href="<?= $h($basePath) ?>/?export_analytics=<?= $h($dataset) ?>&amp;days=<?= $analyticsDays ?>"
+                        >
+                            CSV <?= $h($label) ?>
+                        </a>
+                    <?php endforeach; ?>
+
+                    <form
+                        method="post"
+                        action="<?= $h($basePath) ?>/"
+                        data-confirm="داده‌های منقضی Analytics پاک شوند؟"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= $h($csrf) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="cleanup_analytics"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_section"
+                            value="analytics"
+                        >
+                        <button
+                            class="button danger"
+                            type="submit"
+                        >
+                            پاک‌سازی Retention
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <section class="metrics">
+                <?php foreach (
+                    $analyticsCards
+                    as [$icon, $label, $value]
+                ): ?>
+                    <article class="metric-card">
+                        <span class="metric-icon">
+                            <?= $h($icon) ?>
+                        </span>
+                        <div>
+                            <small><?= $h($label) ?></small>
+                            <strong>
+                                <?= $h(
+                                    is_numeric($value)
+                                        ? $number($value)
+                                        : $value
+                                ) ?>
+                            </strong>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </section>
+
+            <section class="panel">
+                <h2>فعالیت ۱۴ روز اخیر</h2>
+                <div class="activity-chart">
+                    <?php foreach ($dailyRows as $row): ?>
+                        <div class="activity-column">
+                            <div class="bars">
+                                <span
+                                    class="bar users h-<?= (int) round(10 * (int) $row['users'] / $dailyMaximum) ?>"
+                                ></span>
+                                <span
+                                    class="bar updates h-<?= (int) round(10 * (int) $row['events'] / $dailyMaximum) ?>"
+                                ></span>
+                            </div>
+                            <small>
+                                <?= $h(
+                                    substr(
+                                        (string) $row['day'],
+                                        5
+                                    )
+                                ) ?>
+                            </small>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <div class="legend">
+                    <span>
+                        <i class="legend-users"></i>
+                        کاربران یکتا
+                    </span>
+                    <span>
+                        <i class="legend-updates"></i>
+                        رویدادها
+                    </span>
+                </div>
+            </section>
+
+            <section class="grid two">
+                <article class="panel">
+                    <h2>Retention تقریبی</h2>
+                    <dl class="detail-list">
+                        <?php foreach (
+                            [
+                                'd1' => 'روز ۱',
+                                'd7' => 'روز ۷',
+                                'd30' => 'روز ۳۰',
+                            ]
+                            as $retentionKey =>
+                                $retentionLabel
+                        ): ?>
+                            <?php
+                            $retention =
+                                $analytics['retention'][
+                                    $retentionKey
+                                ];
+                            ?>
+                            <div>
+                                <dt>
+                                    <?= $h($retentionLabel) ?>
+                                </dt>
+                                <dd>
+                                    <?= $h($retention['rate']) ?>%
+                                    <small>
+                                        <?= $number($retention['retained']) ?>
+                                        از
+                                        <?= $number($retention['eligible']) ?>
+                                    </small>
+                                </dd>
+                            </div>
+                        <?php endforeach; ?>
+                    </dl>
+                </article>
+
+                <article class="panel">
+                    <h2>وضعیت Job Queue</h2>
+                    <dl class="detail-list">
+                        <?php foreach (
+                            [
+                                'queued' => 'در صف',
+                                'processing' => 'در حال اجرا',
+                                'completed' => 'تکمیل‌شده',
+                                'dead' => 'Dead',
+                                'dead_letters' => 'Dead Letter فعال',
+                            ]
+                            as $jobKey => $jobLabel
+                        ): ?>
+                            <div>
+                                <dt><?= $h($jobLabel) ?></dt>
+                                <dd>
+                                    <?= $number(
+                                        $analytics['jobs'][
+                                            $jobKey
+                                        ]
+                                    ) ?>
+                                </dd>
+                            </div>
+                        <?php endforeach; ?>
+                    </dl>
+                </article>
+            </section>
+
+            <section class="panel">
+                <h2>فرمان‌ها و دکمه‌های پراستفاده</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ماژول</th>
+                            <th>فرمان / دکمه</th>
+                            <th>منبع</th>
+                            <th>تعداد</th>
+                            <th>میانگین زمان</th>
+                            <th>موفقیت</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $analytics['commands']
+                            as $row
+                        ): ?>
+                            <tr>
+                                <td><code><?= $h($row['module']) ?></code></td>
+                                <td><?= $h($row['command']) ?></td>
+                                <td><?= $h($row['source']) ?></td>
+                                <td><?= $number((int) $row['total']) ?></td>
+                                <td><?= $h(round((float) $row['avg_duration_ms'], 2)) ?> ms</td>
+                                <td><?= $h(round((float) $row['success_rate'], 2)) ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>عملکرد ماژول‌ها</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ماژول</th>
+                            <th>رویداد</th>
+                            <th>کاربر</th>
+                            <th>میانگین</th>
+                            <th>بیشینه</th>
+                            <th>موفقیت</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $analytics['modules']
+                            as $row
+                        ): ?>
+                            <tr>
+                                <td><code><?= $h($row['module']) ?></code></td>
+                                <td><?= $number((int) $row['events']) ?></td>
+                                <td><?= $number((int) $row['users']) ?></td>
+                                <td><?= $h(round((float) $row['avg_duration_ms'], 2)) ?> ms</td>
+                                <td><?= $h(round((float) $row['max_duration_ms'], 2)) ?> ms</td>
+                                <td><?= $h(round((float) $row['success_rate'], 2)) ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="grid two">
+                <article class="panel">
+                    <h2>API Metrics</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Provider</th>
+                                <th>Path</th>
+                                <th>Call</th>
+                                <th>Latency</th>
+                                <th>خطا</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $analytics['api']
+                                as $row
+                            ): ?>
+                                <tr>
+                                    <td><?= $h($row['provider']) ?></td>
+                                    <td><code><?= $h($row['path']) ?></code></td>
+                                    <td><?= $number((int) $row['calls']) ?></td>
+                                    <td><?= $h(round((float) $row['avg_duration_ms'], 2)) ?> ms</td>
+                                    <td><?= $number((int) $row['failures']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+
+                <article class="panel">
+                    <h2>Cache Metrics</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>Namespace</th>
+                                <th>عملیات</th>
+                                <th>Hit</th>
+                                <th>Miss</th>
+                                <th>Latency</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $analytics['cache']
+                                as $row
+                            ): ?>
+                                <tr>
+                                    <td><code><?= $h($row['namespace']) ?></code></td>
+                                    <td><?= $number((int) $row['operations']) ?></td>
+                                    <td><?= $number((int) $row['hits']) ?></td>
+                                    <td><?= $number((int) $row['misses']) ?></td>
+                                    <td><?= $h(round((float) $row['avg_duration_ms'], 3)) ?> ms</td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="panel">
+                <h2>خطاهای پرتکرار</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ماژول</th>
+                            <th>Action</th>
+                            <th>کد</th>
+                            <th>پیام</th>
+                            <th>تعداد</th>
+                            <th>آخرین</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $analytics['errors']
+                            as $row
+                        ): ?>
+                            <tr>
+                                <td><code><?= $h($row['module']) ?></code></td>
+                                <td><code><?= $h($row['action']) ?></code></td>
+                                <td><?= $h($row['error_code']) ?></td>
+                                <td><small><?= $h($row['error_message']) ?></small></td>
+                                <td><?= $number((int) $row['total']) ?></td>
+                                <td><?= $h($row['last_seen_at']) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Jobهای اخیر</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>نوع</th>
+                            <th>وضعیت</th>
+                            <th>تلاش</th>
+                            <th>زمان اجرا</th>
+                            <th>خطا</th>
+                            <th>عملیات</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $analytics['recent_jobs']
+                            as $job
+                        ): ?>
+                            <tr>
+                                <td><code>#<?= $h($job['id']) ?></code></td>
+                                <td><code><?= $h($job['job_type']) ?></code></td>
+                                <td><span class="badge neutral"><?= $h($job['status']) ?></span></td>
+                                <td><?= $number((int) $job['attempts']) ?> / <?= $number((int) $job['max_attempts']) ?></td>
+                                <td><?= $h(date('Y-m-d H:i:s', (int) $job['available_at'])) ?></td>
+                                <td><small><?= $h(mb_substr((string) ($job['last_error'] ?? ''), 0, 180)) ?></small></td>
+                                <td>
+                                    <?php if ($job['status'] === 'queued'): ?>
+                                        <form method="post" action="<?= $h($basePath) ?>/">
+                                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                            <input type="hidden" name="action" value="cancel_job">
+                                            <input type="hidden" name="return_section" value="analytics">
+                                            <input type="hidden" name="job_id" value="<?= $h($job['id']) ?>">
+                                            <button class="button small danger" type="submit">لغو</button>
+                                        </form>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Dead Letter Queue</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Job</th>
+                            <th>نوع</th>
+                            <th>تلاش</th>
+                            <th>خطا</th>
+                            <th>زمان</th>
+                            <th>عملیات</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $analytics['dead_letters']
+                            as $dead
+                        ): ?>
+                            <tr>
+                                <td><code>#<?= $h($dead['id']) ?></code></td>
+                                <td><code>#<?= $h($dead['original_job_id']) ?></code></td>
+                                <td><code><?= $h($dead['job_type']) ?></code></td>
+                                <td><?= $number((int) $dead['attempts']) ?></td>
+                                <td><small><?= $h(mb_substr((string) $dead['error_message'], 0, 220)) ?></small></td>
+                                <td><?= $h($dead['failed_at']) ?></td>
+                                <td>
+                                    <?php if (($dead['replayed_at'] ?? null) === null): ?>
+                                        <form method="post" action="<?= $h($basePath) ?>/">
+                                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                            <input type="hidden" name="action" value="replay_dead_letter">
+                                            <input type="hidden" name="return_section" value="analytics">
+                                            <input type="hidden" name="dead_letter_id" value="<?= $h($dead['id']) ?>">
+                                            <button class="button small secondary" type="submit">Replay</button>
+                                        </form>
+                                    <?php else: ?>
+                                        <span class="badge success">Replay شده</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+        <?php elseif ($section === 'features'): ?>
+            <?php
+            $featureFlags = $service->featureFlags();
+            ?>
+            <section class="panel">
+                <h2>Feature Flags</h2>
+                <p>
+                    فعال‌سازی تدریجی قابلیت‌ها بدون Deploy.
+                    Rollout برای هر کاربر به‌صورت پایدار محاسبه می‌شود.
+                </p>
+            </section>
+
+            <section class="settings-grid">
+                <?php foreach (
+                    $featureFlags
+                    as $feature
+                ): ?>
+                    <article class="setting-card <?= $feature['source'] === 'database' ? 'overridden' : '' ?>">
+                        <div class="setting-head">
+                            <div>
+                                <h3><?= $h($feature['key']) ?></h3>
+                                <code><?= $h($feature['source']) ?></code>
+                            </div>
+                            <span class="badge <?= $feature['enabled'] ? 'success' : 'danger' ?>">
+                                <?= $feature['enabled'] ? 'فعال' : 'غیرفعال' ?>
+                            </span>
+                        </div>
+
+                        <p><?= $h($feature['description']) ?></p>
+
+                        <form
+                            method="post"
+                            action="<?= $h($basePath) ?>/"
+                            class="stack"
+                        >
+                            <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                            <input type="hidden" name="action" value="save_feature_flag">
+                            <input type="hidden" name="return_section" value="features">
+                            <input type="hidden" name="flag_key" value="<?= $h($feature['key']) ?>">
+
+                            <label>
+                                وضعیت
+                                <select name="enabled">
+                                    <option value="1" <?= $feature['enabled'] ? 'selected' : '' ?>>فعال</option>
+                                    <option value="0" <?= !$feature['enabled'] ? 'selected' : '' ?>>غیرفعال</option>
+                                </select>
+                            </label>
+
+                            <label>
+                                Rollout درصدی
+                                <input
+                                    type="number"
+                                    name="rollout_percentage"
+                                    min="0"
+                                    max="100"
+                                    value="<?= $h($feature['rollout_percentage']) ?>"
+                                    required
+                                >
+                            </label>
+
+                            <label>
+                                توضیح
+                                <textarea name="description" rows="3" maxlength="500"><?= $h($feature['description']) ?></textarea>
+                            </label>
+
+                            <button class="button primary" type="submit">ذخیره</button>
+                        </form>
+
+                        <?php if ($feature['source'] === 'database'): ?>
+                            <form method="post" action="<?= $h($basePath) ?>/">
+                                <input type="hidden" name="csrf" value="<?= $h($csrf) ?>">
+                                <input type="hidden" name="action" value="reset_feature_flag">
+                                <input type="hidden" name="return_section" value="features">
+                                <input type="hidden" name="flag_key" value="<?= $h($feature['key']) ?>">
+                                <button class="button ghost" type="submit">بازگشت به Config</button>
+                            </form>
+                        <?php endif; ?>
+                    </article>
+                <?php endforeach; ?>
             </section>
 
         <?php elseif ($section === 'settings'): ?>

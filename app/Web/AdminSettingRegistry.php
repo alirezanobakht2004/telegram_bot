@@ -48,6 +48,206 @@ final class AdminSettingRegistry
                     'بایت'
                 ),
             ],
+            'http.max_redirects' => [
+                'group' => 'HTTP خارجی',
+                ...$this->integer(
+                    'حداکثر Redirect',
+                    0,
+                    10,
+                    'مرحله'
+                ),
+            ],
+
+            'analytics.enabled' => [
+                'group' => 'Analytics',
+                'label' => 'فعال بودن Analytics',
+                'type' => 'bool',
+                'help' => 'ثبت رویدادهای عملیاتی و آماری.',
+            ],
+            'analytics.sample_rate' => [
+                'group' => 'Analytics',
+                ...$this->integer(
+                    'نرخ نمونه‌برداری Usage',
+                    0,
+                    100,
+                    'درصد'
+                ),
+            ],
+            'analytics.command_history.enabled' => [
+                'group' => 'Analytics',
+                'label' => 'ثبت تاریخچه فرمان',
+                'type' => 'bool',
+                'help' => 'نام فرمان، منبع و زمان اجرا ثبت می‌شود.',
+            ],
+            'analytics.command_history.store_arguments' => [
+                'group' => 'Analytics',
+                'label' => 'ذخیره Preview آرگومان‌ها',
+                'type' => 'bool',
+                'help' => 'به‌دلایل حریم خصوصی پیش‌فرض خاموش است.',
+            ],
+            'analytics.command_history.max_argument_characters' => [
+                'group' => 'Analytics',
+                ...$this->integer(
+                    'حداکثر طول Preview',
+                    0,
+                    1000,
+                    'کاراکتر'
+                ),
+            ],
+            'analytics.api_metrics.enabled' => [
+                'group' => 'Analytics',
+                'label' => 'ثبت API Metrics',
+                'type' => 'bool',
+                'help' => 'Latency، Status و حجم پاسخ سرویس‌ها.',
+            ],
+            'analytics.api_metrics.sample_rate' => [
+                'group' => 'Analytics',
+                ...$this->integer(
+                    'نرخ نمونه‌برداری API',
+                    0,
+                    100,
+                    'درصد'
+                ),
+            ],
+            'analytics.cache_metrics.enabled' => [
+                'group' => 'Analytics',
+                'label' => 'ثبت Cache Metrics',
+                'type' => 'bool',
+                'help' => 'Hit، Miss، Write و زمان عملیات کش.',
+            ],
+            'analytics.cache_metrics.sample_rate' => [
+                'group' => 'Analytics',
+                ...$this->integer(
+                    'نرخ نمونه‌برداری Cache',
+                    0,
+                    100,
+                    'درصد'
+                ),
+            ],
+            'analytics.retention.usage_days' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'نگهداری Usage Events',
+                    1,
+                    3650,
+                    'روز'
+                ),
+            ],
+            'analytics.retention.command_days' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'نگهداری Command History',
+                    1,
+                    3650,
+                    'روز'
+                ),
+            ],
+            'analytics.retention.api_days' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'نگهداری API Metrics',
+                    1,
+                    3650,
+                    'روز'
+                ),
+            ],
+            'analytics.retention.cache_days' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'نگهداری Cache Metrics',
+                    1,
+                    3650,
+                    'روز'
+                ),
+            ],
+            'analytics.retention.job_run_days' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'نگهداری Job Runs',
+                    1,
+                    3650,
+                    'روز'
+                ),
+            ],
+            'analytics.retention.dead_letter_days' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'نگهداری Dead Letter',
+                    1,
+                    3650,
+                    'روز'
+                ),
+            ],
+            'analytics.retention.max_usage_rows' => [
+                'group' => 'Analytics Retention',
+                ...$this->integer(
+                    'سقف Usage Events',
+                    1000,
+                    2000000,
+                    'رکورد'
+                ),
+            ],
+
+            'jobs.enabled' => [
+                'group' => 'Job Queue',
+                'label' => 'فعال بودن Worker عمومی',
+                'type' => 'bool',
+                'help' => 'صف عمومی کارهای زمان‌بندی‌شده.',
+            ],
+            'jobs.batch_size' => [
+                'group' => 'Job Queue',
+                ...$this->integer(
+                    'اندازه Batch',
+                    1,
+                    100,
+                    'Job در هر اجرا'
+                ),
+            ],
+            'jobs.lock_ttl_seconds' => [
+                'group' => 'Job Queue',
+                ...$this->integer(
+                    'TTL قفل Worker',
+                    30,
+                    3600,
+                    'ثانیه'
+                ),
+            ],
+            'jobs.stale_after_seconds' => [
+                'group' => 'Job Queue',
+                ...$this->integer(
+                    'زمان بازیابی Job رهاشده',
+                    60,
+                    86400,
+                    'ثانیه'
+                ),
+            ],
+            'jobs.retry_base_seconds' => [
+                'group' => 'Job Queue',
+                ...$this->integer(
+                    'پایه Backoff',
+                    1,
+                    3600,
+                    'ثانیه'
+                ),
+            ],
+            'jobs.default_max_attempts' => [
+                'group' => 'Job Queue',
+                ...$this->integer(
+                    'حداکثر تلاش پیش‌فرض',
+                    1,
+                    50,
+                    'بار'
+                ),
+            ],
+            'jobs.temporary_file_max_age_seconds' => [
+                'group' => 'Job Queue',
+                ...$this->integer(
+                    'عمر فایل موقت',
+                    60,
+                    604800,
+                    'ثانیه'
+                ),
+            ],
 
             ...$this->module(
                 'animals',

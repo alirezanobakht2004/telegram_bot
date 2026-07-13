@@ -2,15 +2,24 @@
 
 declare(strict_types=1);
 
+use SmartToolbox\Core\ApiMetricsTracker;
+use SmartToolbox\Core\CacheMetricsTracker;
+use SmartToolbox\Core\CallbackRouter;
+use SmartToolbox\Core\CommandHistory;
 use SmartToolbox\Core\CommandRouter;
 use SmartToolbox\Core\ConversationStateStore;
 use SmartToolbox\Core\Database;
+use SmartToolbox\Core\EventDispatcher;
+use SmartToolbox\Core\FeatureRegistry;
 use SmartToolbox\Core\FileCache;
 use SmartToolbox\Core\HttpClient;
+use SmartToolbox\Core\InlineQueryRouter;
 use SmartToolbox\Core\RateLimiter;
 use SmartToolbox\Core\RuntimeSettings;
+use SmartToolbox\Core\SsrfGuard;
 use SmartToolbox\Core\TelegramClient;
 use SmartToolbox\Core\UpdateProcessor;
+use SmartToolbox\Core\UsageTracker;
 use SmartToolbox\Core\UserPreferenceStore;
 use SmartToolbox\Modules\Admin\AdminModule;
 use SmartToolbox\Modules\Animals\AnimalsModule;
@@ -124,16 +133,132 @@ try {
         $pdo
     );
 
+    $features = new FeatureRegistry(
+        $pdo,
+        (array) $config->get(
+            'features.defaults',
+            []
+        )
+    );
+
+    $analyticsEnabled = (bool) $runtime->get(
+        'analytics.enabled',
+        true
+    ) && $features->isEnabled('analytics');
+
+    $usageTracker = new UsageTracker(
+        pdo: $pdo,
+        enabled: $analyticsEnabled,
+        sampleRate: (int) $runtime->get(
+            'analytics.sample_rate',
+            100
+        )
+    );
+
+    $apiMetrics = new ApiMetricsTracker(
+        pdo: $pdo,
+        enabled: $analyticsEnabled
+            && (bool) $runtime->get(
+                'analytics.api_metrics.enabled',
+                true
+            ),
+        sampleRate: (int) $runtime->get(
+            'analytics.api_metrics.sample_rate',
+            100
+        )
+    );
+
+    $cacheMetrics = new CacheMetricsTracker(
+        pdo: $pdo,
+        enabled: $analyticsEnabled
+            && (bool) $runtime->get(
+                'analytics.cache_metrics.enabled',
+                true
+            ),
+        sampleRate: (int) $runtime->get(
+            'analytics.cache_metrics.sample_rate',
+            100
+        )
+    );
+
+    $commandHistory = new CommandHistory(
+        pdo: $pdo,
+        enabled: (bool) $runtime->get(
+            'analytics.command_history.enabled',
+            true
+        ),
+        storeArguments: (bool) $runtime->get(
+            'analytics.command_history.store_arguments',
+            false
+        ),
+        maxArgumentCharacters: (int) $runtime->get(
+            'analytics.command_history.max_argument_characters',
+            200
+        )
+    );
+
     $telegram = new TelegramClient(
-        (string) $config->get('telegram.token')
+        token: (string) $config->get('telegram.token'),
+        metrics: $apiMetrics
     );
 
     $router = new CommandRouter(
-        (string) $config->get('telegram.username')
+        botUsername: (string) $config->get(
+            'telegram.username'
+        ),
+        usageTracker: $usageTracker,
+        history: $commandHistory
+    );
+
+    $events = new EventDispatcher();
+    $callbackRouter = new CallbackRouter(
+        usageTracker: $usageTracker,
+        features: $features
+    );
+    $inlineRouter = new InlineQueryRouter(
+        usageTracker: $usageTracker,
+        features: $features
+    );
+
+    $callbackRouter->fallback(
+        static function ($context, string $data): void {
+            $context->answer(
+                'این دکمه دیگر فعال نیست.'
+            );
+        },
+        'core'
+    );
+
+    $inlineRouter->fallback(
+        static function ($context, string $query): void {
+            $context->answer(
+                [],
+                [
+                    'cache_time' => 1,
+                    'is_personal' => true,
+                    'button' => [
+                        'text' => 'راهنمای حالت Inline',
+                        'start_parameter' => 'inline_help',
+                    ],
+                ]
+            );
+        },
+        'core'
     );
 
     $coreModule = new CoreModule();
     $coreModule->register($router);
+
+    $ssrfGuard = new SsrfGuard(
+        allowHttp: (bool) $runtime->get(
+            'http.ssrf.allow_http',
+            false
+        ),
+        allowedPorts: (array) $runtime->get(
+            'http.ssrf.allowed_ports',
+            [443]
+        )
+    );
 
     $http = new HttpClient(
         userAgent: (string) $config->get(
@@ -151,12 +276,19 @@ try {
         maxResponseBytes: (int) $runtime->get(
             'http.max_response_bytes',
             1048576
+        ),
+        metrics: $apiMetrics,
+        ssrfGuard: $ssrfGuard,
+        maxRedirects: (int) $runtime->get(
+            'http.max_redirects',
+            3
         )
     );
 
     $cache = new FileCache(
-        (string) $config->get('paths.cache')
-        . '/api'
+        directory: (string) $config->get('paths.cache')
+            . '/api',
+        metrics: $cacheMetrics
     );
 
     $rateLimiter = new RateLimiter($pdo);
@@ -544,9 +676,13 @@ try {
     }
 
     $processor = new UpdateProcessor(
-        $pdo,
-        $telegram,
-        $router
+        pdo: $pdo,
+        telegram: $telegram,
+        router: $router,
+        events: $events,
+        callbackRouter: $callbackRouter,
+        inlineRouter: $inlineRouter,
+        usageTracker: $usageTracker
     );
 
     $processor->process($update);

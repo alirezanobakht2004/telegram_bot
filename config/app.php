@@ -16,6 +16,19 @@ return [
         'webhook_url' => '',
         'webhook_secret' => '',
         'max_connections' => 2,
+        'drop_pending_updates' => false,
+        'allowed_updates' => [
+            'message',
+            'edited_message',
+            'callback_query',
+            'inline_query',
+            'chosen_inline_result',
+            'my_chat_member',
+            'chat_member',
+            'chat_join_request',
+            'poll',
+            'poll_answer',
+        ],
     ],
 
     'database' => [
@@ -27,6 +40,7 @@ return [
         'logs' => dirname(__DIR__) . '/storage/logs',
         'cache' => dirname(__DIR__) . '/storage/cache',
         'backups' => dirname(__DIR__) . '/storage/backups',
+        'temporary' => dirname(__DIR__) . '/storage/tmp',
     ],
 
     'http' => [
@@ -34,6 +48,83 @@ return [
         'connect_timeout' => 4,
         'timeout' => 8,
         'max_response_bytes' => 1048576,
+        'max_redirects' => 3,
+
+        'ssrf' => [
+            'allow_http' => false,
+            'allowed_ports' => [443],
+        ],
+    ],
+
+
+    /*
+     * Telemetry only stores operational metadata. Raw message text and
+     * command arguments are not stored by default.
+     */
+    'analytics' => [
+        'enabled' => true,
+        'sample_rate' => 100,
+
+        'command_history' => [
+            'enabled' => true,
+            'store_arguments' => false,
+            'max_argument_characters' => 200,
+        ],
+
+        'api_metrics' => [
+            'enabled' => true,
+            'sample_rate' => 100,
+        ],
+
+        'cache_metrics' => [
+            'enabled' => true,
+            'sample_rate' => 100,
+        ],
+
+        'retention' => [
+            'usage_days' => 90,
+            'command_days' => 30,
+            'api_days' => 30,
+            'cache_days' => 30,
+            'job_run_days' => 30,
+            'dead_letter_days' => 90,
+            'max_usage_rows' => 250000,
+        ],
+    ],
+
+    'jobs' => [
+        'enabled' => true,
+        'batch_size' => 10,
+        'lock_ttl_seconds' => 180,
+        'stale_after_seconds' => 600,
+        'retry_base_seconds' => 30,
+        'default_max_attempts' => 3,
+        'temporary_file_max_age_seconds' => 3600,
+    ],
+
+    'features' => [
+        'defaults' => [
+            'analytics' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Usage analytics and operational metrics.',
+            ],
+            'generic_jobs' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Generic scheduled job queue and worker.',
+            ],
+            'callback_routing' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Callback query routing foundation.',
+            ],
+            'inline_routing' => [
+                'enabled' => false,
+                'rollout_percentage' => 100,
+                'description' => 'Inline mode handlers; enabled in release one.',
+            ],
+        ],
     ],
 
     'modules' => [

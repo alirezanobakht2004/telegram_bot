@@ -10,7 +10,8 @@ use RuntimeException;
 final class FileCache
 {
     public function __construct(
-        private readonly string $directory
+        private readonly string $directory,
+        private readonly ?CacheMetricsTracker $metrics = null
     ) {
         if (
             !is_dir($this->directory)
@@ -32,9 +33,17 @@ final class FileCache
 
     public function get(string $key): mixed
     {
+        $startedAt = hrtime(true);
         $path = $this->path($key);
 
         if (!is_file($path)) {
+            $this->recordMetric(
+                $key,
+                'get',
+                false,
+                $startedAt
+            );
+
             return null;
         }
 
@@ -45,11 +54,26 @@ final class FileCache
             || $payload['expires_at'] <= time()
         ) {
             @unlink($path);
+            $this->recordMetric(
+                $key,
+                'get',
+                false,
+                $startedAt
+            );
 
             return null;
         }
 
-        return $payload['value'];
+        $value = $payload['value'];
+        $this->recordMetric(
+            $key,
+            'get',
+            true,
+            $startedAt,
+            strlen((string) json_encode($value))
+        );
+
+        return $value;
     }
 
     public function put(
@@ -57,6 +81,7 @@ final class FileCache
         mixed $value,
         int $ttlSeconds
     ): void {
+        $startedAt = hrtime(true);
         if ($ttlSeconds < 1) {
             throw new RuntimeException(
                 'Cache TTL must be at least one second.'
@@ -133,9 +158,20 @@ final class FileCache
         }
 
         @chmod($path, 0600);
+        $this->recordMetric(
+            $key,
+            'put',
+            null,
+            $startedAt,
+            strlen($json)
+        );
 
-        if (random_int(1, 100) === 1) {
-            $this->prune();
+        try {
+            if (random_int(1, 100) === 1) {
+                $this->prune();
+            }
+        } catch (\Throwable) {
+            /* Cache writes must not fail because opportunistic pruning did. */
         }
     }
 
@@ -168,11 +204,19 @@ final class FileCache
 
     public function forget(string $key): void
     {
+        $startedAt = hrtime(true);
         $path = $this->path($key);
 
         if (is_file($path)) {
             @unlink($path);
         }
+
+        $this->recordMetric(
+            $key,
+            'forget',
+            null,
+            $startedAt
+        );
     }
 
     public function prune(): int
@@ -368,6 +412,27 @@ final class FileCache
         }
 
         return $payload;
+    }
+
+
+    private function recordMetric(
+        string $key,
+        string $operation,
+        ?bool $hit,
+        int $startedAtNanoseconds,
+        int $valueBytes = 0
+    ): void {
+        $this->metrics?->record(
+            key: $key,
+            operation: $operation,
+            hit: $hit,
+            durationMs: max(
+                0.0,
+                (hrtime(true) - $startedAtNanoseconds)
+                / 1_000_000
+            ),
+            valueBytes: max(0, $valueBytes)
+        );
     }
 
     private function path(string $key): string
