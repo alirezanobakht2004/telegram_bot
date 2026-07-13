@@ -721,6 +721,48 @@ final class TelegramClient
 
     /**
      * @param array<string, mixed> $options
+     * @return array<string, mixed>|bool
+     */
+    public function editMessageText(
+        string $text,
+        array $options
+    ): array|bool {
+        if (
+            trim($text) === ''
+            || (
+                !isset($options['inline_message_id'])
+                && (
+                    !isset($options['chat_id'])
+                    || !isset($options['message_id'])
+                )
+            )
+        ) {
+            throw new RuntimeException(
+                'Telegram editMessageText parameters are incomplete.'
+            );
+        }
+
+        $result = $this->call(
+            'editMessageText',
+            [
+                'text' => $text,
+            ] + $options
+        );
+
+        if (
+            !is_array($result)
+            && $result !== true
+        ) {
+            throw new RuntimeException(
+                'Telegram editMessageText returned an invalid result.'
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param array<string, mixed> $options
      */
     public function answerCallbackQuery(
         string $callbackQueryId,

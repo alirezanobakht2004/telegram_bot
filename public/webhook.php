@@ -66,6 +66,10 @@ use SmartToolbox\Modules\Monitoring\MonitorRepository;
 use SmartToolbox\Modules\Monitoring\SslInspector;
 use SmartToolbox\Modules\Profile\ProfileModule;
 use SmartToolbox\Modules\Profile\ProfileRepository;
+use SmartToolbox\Modules\Quiz\MathQuestionGenerator;
+use SmartToolbox\Modules\Quiz\QuizModule;
+use SmartToolbox\Modules\Quiz\QuizRepository;
+use SmartToolbox\Modules\Quiz\QuizScoring;
 use SmartToolbox\Modules\Reminders\ReminderModule;
 use SmartToolbox\Modules\Reminders\ReminderRepository;
 use SmartToolbox\Modules\Reminders\ReminderTimeParser;
@@ -377,6 +381,34 @@ try {
 
     $profileRepository = new ProfileRepository(
         $pdo
+    );
+
+    $quizScoring = new QuizScoring(
+        timeBonusMaxPercent: (int)
+            $runtime->get(
+                'modules.quiz_games.scoring.time_bonus_max_percent',
+                50
+            ),
+        streakBonusPercent: (int)
+            $runtime->get(
+                'modules.quiz_games.scoring.streak_bonus_percent',
+                5
+            ),
+        participationXp: (int)
+            $runtime->get(
+                'modules.quiz_games.scoring.participation_xp',
+                1
+            ),
+        xpPerLevel: (int)
+            $runtime->get(
+                'modules.quiz_games.scoring.xp_per_level',
+                100
+            )
+    );
+
+    $quizRepository = new QuizRepository(
+        pdo: $pdo,
+        scoring: $quizScoring
     );
 
     $groupRepository = new GroupRepository(
@@ -990,6 +1022,69 @@ try {
 
         $profileModule->register($router);
         $profileModule->registerCallbacks(
+            $callbackRouter
+        );
+    }
+
+    if (
+        (bool) $runtime->get(
+            'modules.quiz_games.enabled',
+            true
+        )
+        && $features->isEnabled(
+            'quiz_games'
+        )
+    ) {
+        $quizModule = new QuizModule(
+            repository: $quizRepository,
+            math: new MathQuestionGenerator(),
+            rateLimiter: $rateLimiter,
+            defaultPoints: (array)
+                $runtime->get(
+                    'modules.quiz_games.scoring.points',
+                    [
+                        'easy' => 10,
+                        'medium' => 20,
+                        'hard' => 30,
+                    ]
+                ),
+            defaultXp: (array)
+                $runtime->get(
+                    'modules.quiz_games.scoring.xp',
+                    [
+                        'easy' => 10,
+                        'medium' => 18,
+                        'hard' => 26,
+                    ]
+                ),
+            defaultTimeouts: (array)
+                $runtime->get(
+                    'modules.quiz_games.answer_timeouts',
+                    [
+                        'easy' => 30,
+                        'medium' => 25,
+                        'hard' => 20,
+                    ]
+                ),
+            leaderboardSize: (int)
+                $runtime->get(
+                    'modules.quiz_games.leaderboard_size',
+                    10
+                ),
+            maxAttempts: (int)
+                $runtime->get(
+                    'modules.quiz_games.rate_limit.max_attempts',
+                    30
+                ),
+            windowSeconds: (int)
+                $runtime->get(
+                    'modules.quiz_games.rate_limit.window_seconds',
+                    60
+                )
+        );
+
+        $quizModule->register($router);
+        $quizModule->registerCallbacks(
             $callbackRouter
         );
     }

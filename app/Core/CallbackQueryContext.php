@@ -158,6 +158,45 @@ final class CallbackQueryContext
         );
     }
 
+    /**
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>|bool
+     */
+    public function editMessageText(
+        string $text,
+        array $options = []
+    ): array|bool {
+        $inlineMessageId =
+            $this->inlineMessageId();
+
+        if ($inlineMessageId !== null) {
+            $options['inline_message_id'] =
+                $inlineMessageId;
+        } else {
+            $chatId = $this->chatId();
+            $messageId = $this->messageId();
+
+            if (
+                $chatId === null
+                || $messageId === null
+            ) {
+                throw new RuntimeException(
+                    'Callback query message identifiers are missing.'
+                );
+            }
+
+            $options['chat_id'] = $chatId;
+            $options['message_id'] =
+                $messageId;
+        }
+
+        return $this->telegram
+            ->editMessageText(
+                $text,
+                $options
+            );
+    }
+
     public function ensureAnswered(): void
     {
         if (!$this->answered) {

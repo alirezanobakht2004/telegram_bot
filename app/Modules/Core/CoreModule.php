@@ -126,6 +126,7 @@ final class CoreModule implements ModuleInterface
                     . "⏰ یادآورها\n"
                     . "🔔 هشدارها و اشتراک‌ها\n"
                     . "📡 مانیتورینگ سایت\n"
+                    . "🎯 مسابقه، آزمون و امتیاز\n"
                     . "🧮 ماشین حساب و تبدیل واحد\n"
                     . "📚 ویکی‌پدیا\n"
                     . "🐙 GitHub و Release Watch\n"
@@ -165,6 +166,10 @@ final class CoreModule implements ModuleInterface
             . "/purge، /slowmode، /rules، /setrules\n"
             . "/antispam، /antilink، /badwords، /captcha\n"
             . "/invitelink، /revokelink، /joinrequests\n\n"
+            . "مسابقه و امتیاز:\n"
+            . "/quiz، /trivia، /mathgame، /wordgame\n"
+            . "/dailychallenge، /leaderboard\n"
+            . "/myscore، /achievements، /streak\n\n"
             . "/favorite weather Tehran — علاقه‌مندی\n"
             . "/favorites — فهرست علاقه‌مندی‌ها\n"
             . "/setshortcut office weather Tehran — میان‌بر\n"
@@ -252,6 +257,7 @@ final class CoreModule implements ModuleInterface
             'alerts',
             'monitoring',
             'file_tools',
+            'quiz',
             'calculator',
             'tools',
             'developer',
@@ -316,6 +322,7 @@ final class CoreModule implements ModuleInterface
             'alerts' => '🔔 هشدارها',
             'monitoring' => '📡 مانیتورینگ',
             'file_tools' => '📁 فایل و تصویر',
+            'quiz' => '🎯 مسابقه و آزمون',
             'calculator' => '🧮 ماشین حساب',
             'tools' => '🧰 ابزارها',
             'developer' => '🧑‍💻 توسعه‌دهنده',

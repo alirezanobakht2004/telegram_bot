@@ -23,6 +23,7 @@
         "files:capabilities": "php scripts/check_file_capabilities.php",
         "jobs:process": "php scripts/process_jobs.php",
         "migrate": "php scripts/migrate.php",
+        "release-five:test": "php scripts/test_release_five.php",
         "release-four:test": "php scripts/test_release_four.php",
         "release-one:test": "php scripts/test_release_one.php",
         "release-three:test": "php scripts/test_release_three.php",

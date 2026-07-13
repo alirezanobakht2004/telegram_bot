@@ -149,6 +149,11 @@ return [
                 'rollout_percentage' => 100,
                 'description' => 'Queued file, image, PDF and text conversion tools.',
             ],
+            'quiz_games' => [
+                'enabled' => true,
+                'rollout_percentage' => 100,
+                'description' => 'Quiz, trivia, math and word games with scoring, streaks and leaderboards.',
+            ],
         ],
     ],
 
@@ -386,6 +391,48 @@ return [
             'binaries' => [
                 'pdftotext' => '',
                 'pdfinfo' => '',
+            ],
+
+            'rate_limit' => [
+                'max_attempts' => 30,
+                'window_seconds' => 60,
+            ],
+        ],
+
+
+        'quiz_games' => [
+            'enabled' => true,
+            'leaderboard_size' => 10,
+            'retention_days' => 180,
+
+            'scoring' => [
+                'time_bonus_max_percent' => 50,
+                'streak_bonus_percent' => 5,
+                'participation_xp' => 1,
+                'xp_per_level' => 100,
+
+                'points' => [
+                    'easy' => 10,
+                    'medium' => 20,
+                    'hard' => 30,
+                ],
+
+                'xp' => [
+                    'easy' => 10,
+                    'medium' => 18,
+                    'hard' => 26,
+                ],
+            ],
+
+            'answer_timeouts' => [
+                'easy' => 30,
+                'medium' => 25,
+                'hard' => 20,
+            ],
+
+            'worker' => [
+                'batch_size' => 200,
+                'interval_seconds' => 300,
             ],
 
             'rate_limit' => [

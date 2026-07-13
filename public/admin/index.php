@@ -341,6 +341,46 @@ if (
 }
 
 if (
+    $auth->authenticated($userAgent)
+    && ($_GET['export_quiz'] ?? '')
+        === 'questions'
+) {
+    try {
+        $filename = 'quiz-questions-'
+            . date('Ymd-His')
+            . '.csv';
+
+        header(
+            'Content-Type: text/csv; charset=utf-8'
+        );
+        header(
+            'Content-Disposition: attachment; filename="'
+            . $filename
+            . '"'
+        );
+
+        $stream = fopen(
+            'php://output',
+            'wb'
+        );
+
+        if ($stream === false) {
+            throw new RuntimeException(
+                'CSV output stream could not be opened.'
+            );
+        }
+
+        $service->streamQuizCsv($stream);
+        fclose($stream);
+        exit;
+    } catch (Throwable $exception) {
+        http_response_code(400);
+        echo $h($exception->getMessage());
+        exit;
+    }
+}
+
+if (
     ($_SERVER['REQUEST_METHOD'] ?? 'GET')
     === 'POST'
     && ($_POST['action'] ?? '')
@@ -761,6 +801,221 @@ if (
                 $flash(
                     'success',
                     'یادآور دوباره وارد صف شد.'
+                );
+                break;
+
+            case 'save_quiz_category':
+                $categoryId =
+                    $service->saveQuizCategory(
+                        (int) (
+                            $_POST['category_id']
+                            ?? 0
+                        ),
+                        (string) (
+                            $_POST['slug'] ?? ''
+                        ),
+                        (string) (
+                            $_POST['name'] ?? ''
+                        ),
+                        (string) (
+                            $_POST['description']
+                            ?? ''
+                        ),
+                        (string) (
+                            $_POST['enabled'] ?? '0'
+                        ) === '1',
+                        (int) (
+                            $_POST['sort_order']
+                            ?? 0
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "دسته #{$categoryId} ذخیره شد."
+                );
+                break;
+
+            case 'toggle_quiz_category':
+                $service->setQuizCategoryEnabled(
+                    (int) (
+                        $_POST['category_id']
+                        ?? 0
+                    ),
+                    (string) (
+                        $_POST['enabled'] ?? '0'
+                    ) === '1',
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'وضعیت دسته تغییر کرد.'
+                );
+                break;
+
+            case 'save_quiz_question':
+                $questionId =
+                    $service->saveQuizQuestion(
+                        (int) (
+                            $_POST['question_id']
+                            ?? 0
+                        ),
+                        (int) (
+                            $_POST['category_id']
+                            ?? 0
+                        ),
+                        (string) (
+                            $_POST['question_type']
+                            ?? 'trivia'
+                        ),
+                        (string) (
+                            $_POST['difficulty']
+                            ?? 'medium'
+                        ),
+                        (string) (
+                            $_POST['question_text']
+                            ?? ''
+                        ),
+                        [
+                            (string) (
+                                $_POST['option_a']
+                                ?? ''
+                            ),
+                            (string) (
+                                $_POST['option_b']
+                                ?? ''
+                            ),
+                            (string) (
+                                $_POST['option_c']
+                                ?? ''
+                            ),
+                            (string) (
+                                $_POST['option_d']
+                                ?? ''
+                            ),
+                        ],
+                        (int) (
+                            $_POST['correct_option']
+                            ?? 0
+                        ),
+                        (string) (
+                            $_POST['explanation']
+                            ?? ''
+                        ),
+                        (int) (
+                            $_POST['points'] ?? 10
+                        ),
+                        (int) (
+                            $_POST['xp_reward'] ?? 10
+                        ),
+                        (int) (
+                            $_POST[
+                                'answer_timeout_seconds'
+                            ] ?? 30
+                        ),
+                        (string) (
+                            $_POST['enabled'] ?? '0'
+                        ) === '1',
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+                $flash(
+                    'success',
+                    "سؤال #{$questionId} ذخیره شد."
+                );
+                break;
+
+            case 'toggle_quiz_question':
+                $service->setQuizQuestionEnabled(
+                    (int) (
+                        $_POST['question_id']
+                        ?? 0
+                    ),
+                    (string) (
+                        $_POST['enabled'] ?? '0'
+                    ) === '1',
+                    $identity,
+                    $ipAddress,
+                    $userAgent
+                );
+                $flash(
+                    'success',
+                    'وضعیت سؤال تغییر کرد.'
+                );
+                break;
+
+            case 'import_quiz_csv':
+                $upload = $_FILES[
+                    'quiz_csv'
+                ] ?? null;
+
+                if (
+                    !is_array($upload)
+                    || (int) (
+                        $upload['error']
+                        ?? UPLOAD_ERR_NO_FILE
+                    ) !== UPLOAD_ERR_OK
+                    || !is_uploaded_file(
+                        (string) (
+                            $upload['tmp_name']
+                            ?? ''
+                        )
+                    )
+                ) {
+                    throw new RuntimeException(
+                        'آپلود CSV معتبر نیست.'
+                    );
+                }
+
+                $result =
+                    $service->importQuizCsv(
+                        (string) $upload[
+                            'tmp_name'
+                        ],
+                        (string) (
+                            $upload['name']
+                            ?? 'questions.csv'
+                        ),
+                        (int) (
+                            $upload['size'] ?? 0
+                        ),
+                        $identity,
+                        $ipAddress,
+                        $userAgent
+                    );
+
+                $flash(
+                    'success',
+                    'CSV وارد شد: '
+                    . $result['imported']
+                    . ' سؤال جدید، '
+                    . $result['updated']
+                    . ' سؤال به‌روزشده و '
+                    . $result['categories']
+                    . ' دسته.'
+                );
+                break;
+
+            case 'process_quiz_maintenance':
+                $result =
+                    $service
+                        ->processQuizMaintenance(
+                            $identity,
+                            $ipAddress,
+                            $userAgent
+                        );
+                $flash(
+                    'success',
+                    'نگهداری Quiz اجرا شد: '
+                    . $result['expired']
+                    . ' Session منقضی و '
+                    . $result['pruned']
+                    . ' Session پاک شد.'
                 );
                 break;
 
@@ -1213,6 +1468,7 @@ $sections = [
     'broadcasts',
     'reminders',
     'group_management',
+    'quiz',
     'automation',
     'logs',
     'system',
@@ -1241,6 +1497,7 @@ $stats = in_array(
         'dashboard',
         'reminders',
         'group_management',
+        'quiz',
         'automation',
     ],
     true
@@ -1259,6 +1516,7 @@ $navigation = [
     'broadcasts' => ['📣', 'ارسال همگانی'],
     'reminders' => ['⏰', 'یادآورها'],
     'group_management' => ['🛡', 'مدیریت گروه‌ها'],
+    'quiz' => ['🎯', 'مسابقه و آزمون'],
     'automation' => ['🔔', 'هشدار و مانیتور'],
     'logs' => ['🧾', 'لاگ‌ها'],
     'system' => ['🩺', 'سیستم'],
@@ -1392,6 +1650,10 @@ $navigation = [
                 ['🔒', 'محدودیت فعال گروه', $stats['group_sanctions_active']],
                 ['🧩', 'کپچای در انتظار', $stats['group_captchas_pending']],
                 ['🚪', 'درخواست عضویت', $stats['group_join_requests_pending']],
+                ['❓', 'سؤال فعال', $stats['quiz_questions_enabled']],
+                ['🎮', 'بازیکن مسابقه', $stats['quiz_players']],
+                ['✅', 'پاسخ امروز', $stats['quiz_answers_today']],
+                ['⏱', 'Quiz فعال', $stats['quiz_active_sessions']],
                 ['📈', 'رویداد امروز', $stats['usage_events_today']],
                 ['🧵', 'Job فعال', $stats['jobs_queued']],
                 ['💀', 'Dead Letter', $stats['dead_letters']],
@@ -3419,6 +3681,962 @@ $navigation = [
             </section>
 
 
+
+        <?php elseif ($section === 'quiz'): ?>
+            <?php
+            $quizCategoryFilter = trim(
+                (string) (
+                    $_GET['category'] ?? ''
+                )
+            );
+
+            $quizDifficultyFilter = (
+                in_array(
+                    $_GET['difficulty'] ?? '',
+                    ['easy', 'medium', 'hard'],
+                    true
+                )
+            )
+                ? (string) $_GET['difficulty']
+                : '';
+
+            $editQuizQuestionId = (int) (
+                $_GET['edit_question'] ?? 0
+            );
+
+            $quizData = $service->quizOverview(
+                editQuestionId:
+                    $editQuizQuestionId,
+                categorySlug:
+                    $quizCategoryFilter,
+                difficulty:
+                    $quizDifficultyFilter,
+                limit: 150
+            );
+
+            $quizSummary = $quizData['summary'];
+            $quizEdit = $quizData[
+                'edit_question'
+            ];
+
+            $quizOptions = [
+                '',
+                '',
+                '',
+                '',
+            ];
+
+            $quizCorrectOption = 0;
+
+            if (is_array($quizEdit)) {
+                foreach (
+                    $quizEdit['options']
+                    as $index => $option
+                ) {
+                    if ($index > 3) {
+                        break;
+                    }
+
+                    $quizOptions[$index] =
+                        (string) $option[
+                            'option_text'
+                        ];
+
+                    if (
+                        (int) $option[
+                            'is_correct'
+                        ] === 1
+                    ) {
+                        $quizCorrectOption =
+                            $index;
+                    }
+                }
+            }
+
+            $defaultQuizDifficulty =
+                is_array($quizEdit)
+                    ? (string) $quizEdit[
+                        'difficulty'
+                    ]
+                    : 'medium';
+
+            $defaultQuizPoints =
+                is_array($quizEdit)
+                    ? (int) $quizEdit['points']
+                    : (int) $runtime->get(
+                        'modules.quiz_games.scoring.points.medium',
+                        20
+                    );
+
+            $defaultQuizXp =
+                is_array($quizEdit)
+                    ? (int) $quizEdit[
+                        'xp_reward'
+                    ]
+                    : (int) $runtime->get(
+                        'modules.quiz_games.scoring.xp.medium',
+                        18
+                    );
+
+            $defaultQuizTimeout =
+                is_array($quizEdit)
+                    ? (int) $quizEdit[
+                        'answer_timeout_seconds'
+                    ]
+                    : (int) $runtime->get(
+                        'modules.quiz_games.answer_timeouts.medium',
+                        25
+                    );
+
+            $quizAccuracy = (float)
+                $quizSummary['accuracy'];
+            ?>
+
+            <section class="metrics">
+                <?php foreach (
+                    [
+                        ['📚', 'کل دسته‌ها', $quizSummary['categories']],
+                        ['✅', 'دسته فعال', $quizSummary['categories_enabled']],
+                        ['❓', 'کل سؤال‌ها', $quizSummary['questions']],
+                        ['🟢', 'سؤال فعال', $quizSummary['questions_enabled']],
+                        ['🎮', 'بازیکنان', $quizSummary['players']],
+                        ['📝', 'کل پاسخ‌ها', $quizSummary['answers']],
+                        ['🎯', 'دقت کلی', $quizAccuracy . '%'],
+                        ['📅', 'چالش‌های روز', $quizSummary['daily_attempts']],
+                        ['⏱', 'Session فعال', $quizSummary['active_sessions']],
+                    ]
+                    as [$icon, $label, $value]
+                ): ?>
+                    <article class="metric-card">
+                        <span class="metric-icon">
+                            <?= $h($icon) ?>
+                        </span>
+                        <div>
+                            <small><?= $h($label) ?></small>
+                            <strong><?= $h($value) ?></strong>
+                        </div>
+                    </article>
+                <?php endforeach; ?>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>بانک سؤال و موتور امتیاز</h2>
+                        <p>
+                            مدیریت سؤال، CSV، آمار سختی و
+                            پاک‌سازی Sessionهای منقضی
+                        </p>
+                    </div>
+
+                    <div class="actions">
+                        <a
+                            class="button secondary"
+                            href="<?= $h($basePath) ?>/?export_quiz=questions"
+                        >
+                            Export CSV
+                        </a>
+
+                        <form
+                            method="post"
+                            action="<?= $h($basePath) ?>/"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="<?= $h($csrf) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="action"
+                                value="process_quiz_maintenance"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_section"
+                                value="quiz"
+                            >
+                            <button
+                                type="submit"
+                                class="button primary"
+                            >
+                                اجرای Maintenance
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="grid two">
+                    <article class="panel nested">
+                        <h3>تنظیمات فعلی امتیاز</h3>
+                        <p>
+                            Bonus سرعت:
+                            <strong>
+                                <?= $h(
+                                    $runtime->get(
+                                        'modules.quiz_games.scoring.time_bonus_max_percent',
+                                        50
+                                    )
+                                ) ?>%
+                            </strong>
+                        </p>
+                        <p>
+                            Bonus هر Streak:
+                            <strong>
+                                <?= $h(
+                                    $runtime->get(
+                                        'modules.quiz_games.scoring.streak_bonus_percent',
+                                        5
+                                    )
+                                ) ?>%
+                            </strong>
+                        </p>
+                        <p>
+                            XP هر Level:
+                            <strong>
+                                <?= $h(
+                                    $runtime->get(
+                                        'modules.quiz_games.scoring.xp_per_level',
+                                        100
+                                    )
+                                ) ?>
+                            </strong>
+                        </p>
+                        <a
+                            class="button secondary"
+                            href="<?= $h($basePath) ?>/?section=settings"
+                        >
+                            تغییر امتیاز و زمان پاسخ
+                        </a>
+                    </article>
+
+                    <article class="panel nested">
+                        <h3>Import CSV</h3>
+                        <p>
+                            حداکثر ۲ مگابایت و ۱۰۰۰ سؤال در هر فایل.
+                        </p>
+
+                        <form
+                            method="post"
+                            action="<?= $h($basePath) ?>/"
+                            enctype="multipart/form-data"
+                            class="stack"
+                        >
+                            <input
+                                type="hidden"
+                                name="csrf"
+                                value="<?= $h($csrf) ?>"
+                            >
+                            <input
+                                type="hidden"
+                                name="action"
+                                value="import_quiz_csv"
+                            >
+                            <input
+                                type="hidden"
+                                name="return_section"
+                                value="quiz"
+                            >
+                            <input
+                                type="file"
+                                name="quiz_csv"
+                                accept=".csv,text/csv"
+                                required
+                            >
+                            <button
+                                type="submit"
+                                class="button primary"
+                            >
+                                Import
+                            </button>
+                        </form>
+                    </article>
+                </div>
+            </section>
+
+            <section class="grid two">
+                <article class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>ساخت دسته</h2>
+                            <p>
+                                Slug در دستورات
+                                <code>/quiz science</code>
+                                استفاده می‌شود.
+                            </p>
+                        </div>
+                    </div>
+
+                    <form
+                        method="post"
+                        action="<?= $h($basePath) ?>/"
+                        class="stack"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf"
+                            value="<?= $h($csrf) ?>"
+                        >
+                        <input
+                            type="hidden"
+                            name="action"
+                            value="save_quiz_category"
+                        >
+                        <input
+                            type="hidden"
+                            name="return_section"
+                            value="quiz"
+                        >
+                        <input
+                            type="hidden"
+                            name="category_id"
+                            value="0"
+                        >
+
+                        <label>
+                            Slug
+                            <input
+                                type="text"
+                                name="slug"
+                                pattern="[a-z0-9][a-z0-9_-]{1,49}"
+                                placeholder="science"
+                                required
+                            >
+                        </label>
+
+                        <label>
+                            نام
+                            <input
+                                type="text"
+                                name="name"
+                                maxlength="150"
+                                placeholder="علوم"
+                                required
+                            >
+                        </label>
+
+                        <label>
+                            توضیح
+                            <textarea
+                                name="description"
+                                rows="3"
+                                maxlength="1000"
+                            ></textarea>
+                        </label>
+
+                        <label>
+                            ترتیب
+                            <input
+                                type="number"
+                                name="sort_order"
+                                value="100"
+                            >
+                        </label>
+
+                        <input
+                            type="hidden"
+                            name="enabled"
+                            value="0"
+                        >
+                        <label class="checkbox-row">
+                            <input
+                                type="checkbox"
+                                name="enabled"
+                                value="1"
+                                checked
+                            >
+                            فعال
+                        </label>
+
+                        <button
+                            type="submit"
+                            class="button primary"
+                        >
+                            ذخیره دسته
+                        </button>
+                    </form>
+                </article>
+
+                <article class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2>دسته‌ها</h2>
+                            <p>
+                                غیرفعال‌کردن دسته، سؤال‌های آن را
+                                از انتخاب جدید خارج می‌کند.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>دسته</th>
+                                <th>سؤال</th>
+                                <th>پاسخ</th>
+                                <th>وضعیت</th>
+                                <th>عملیات</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            <?php foreach (
+                                $quizData['categories']
+                                as $category
+                            ): ?>
+                                <?php
+                                $categoryAttempts =
+                                    (int) $category[
+                                        'correct_count'
+                                    ]
+                                    + (int) $category[
+                                        'incorrect_count'
+                                    ];
+
+                                $categoryAccuracy =
+                                    $categoryAttempts > 0
+                                        ? round(
+                                            (int) $category[
+                                                'correct_count'
+                                            ]
+                                            / $categoryAttempts
+                                            * 100,
+                                            1
+                                        )
+                                        : 0;
+                                ?>
+                                <tr>
+                                    <td>#<?= $h($category['id']) ?></td>
+                                    <td>
+                                        <strong>
+                                            <?= $h($category['name']) ?>
+                                        </strong>
+                                        <small>
+                                            <?= $h($category['slug']) ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?= $number($category['question_count']) ?>
+                                    </td>
+                                    <td>
+                                        <?= $h($categoryAccuracy) ?>%
+                                    </td>
+                                    <td>
+                                        <span class="badge <?= (int) $category['enabled'] === 1 ? 'success' : 'danger' ?>">
+                                            <?= (int) $category['enabled'] === 1 ? 'فعال' : 'غیرفعال' ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <form
+                                            method="post"
+                                            action="<?= $h($basePath) ?>/"
+                                        >
+                                            <input
+                                                type="hidden"
+                                                name="csrf"
+                                                value="<?= $h($csrf) ?>"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="action"
+                                                value="toggle_quiz_category"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="return_section"
+                                                value="quiz"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="category_id"
+                                                value="<?= $h($category['id']) ?>"
+                                            >
+                                            <input
+                                                type="hidden"
+                                                name="enabled"
+                                                value="<?= (int) $category['enabled'] === 1 ? '0' : '1' ?>"
+                                            >
+                                            <button
+                                                type="submit"
+                                                class="button small <?= (int) $category['enabled'] === 1 ? 'danger' : 'primary' ?>"
+                                            >
+                                                <?= (int) $category['enabled'] === 1 ? 'غیرفعال' : 'فعال' ?>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>
+                            <?= is_array($quizEdit) ? 'ویرایش سؤال #' . $h($quizEdit['id']) : 'ساخت سؤال جدید' ?>
+                        </h2>
+                        <p>
+                            چهار گزینه، یک پاسخ درست، امتیاز، XP
+                            و Timeout مستقل
+                        </p>
+                    </div>
+
+                    <?php if (is_array($quizEdit)): ?>
+                        <a
+                            class="button secondary"
+                            href="<?= $h($basePath) ?>/?section=quiz"
+                        >
+                            سؤال جدید
+                        </a>
+                    <?php endif; ?>
+                </div>
+
+                <form
+                    method="post"
+                    action="<?= $h($basePath) ?>/"
+                    class="stack"
+                >
+                    <input
+                        type="hidden"
+                        name="csrf"
+                        value="<?= $h($csrf) ?>"
+                    >
+                    <input
+                        type="hidden"
+                        name="action"
+                        value="save_quiz_question"
+                    >
+                    <input
+                        type="hidden"
+                        name="return_section"
+                        value="quiz"
+                    >
+                    <input
+                        type="hidden"
+                        name="question_id"
+                        value="<?= $h(
+                            is_array($quizEdit)
+                                ? $quizEdit['id']
+                                : 0
+                        ) ?>"
+                    >
+
+                    <div class="grid two">
+                        <label>
+                            دسته
+                            <select
+                                name="category_id"
+                                required
+                            >
+                                <?php foreach (
+                                    $quizData['categories']
+                                    as $category
+                                ): ?>
+                                    <option
+                                        value="<?= $h($category['id']) ?>"
+                                        <?= is_array($quizEdit) && (int) $quizEdit['category_id'] === (int) $category['id'] ? 'selected' : '' ?>
+                                    >
+                                        <?= $h($category['name']) ?>
+                                        (<?= $h($category['slug']) ?>)
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+
+                        <label>
+                            نوع سؤال
+                            <select name="question_type">
+                                <option
+                                    value="trivia"
+                                    <?= !is_array($quizEdit) || $quizEdit['question_type'] === 'trivia' ? 'selected' : '' ?>
+                                >
+                                    Trivia
+                                </option>
+                                <option
+                                    value="word"
+                                    <?= is_array($quizEdit) && $quizEdit['question_type'] === 'word' ? 'selected' : '' ?>
+                                >
+                                    Word Game
+                                </option>
+                            </select>
+                        </label>
+
+                        <label>
+                            سختی
+                            <select name="difficulty">
+                                <?php foreach (
+                                    [
+                                        'easy' => 'آسان',
+                                        'medium' => 'متوسط',
+                                        'hard' => 'سخت',
+                                    ]
+                                    as $value => $label
+                                ): ?>
+                                    <option
+                                        value="<?= $h($value) ?>"
+                                        <?= $defaultQuizDifficulty === $value ? 'selected' : '' ?>
+                                    >
+                                        <?= $h($label) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </label>
+
+                        <label>
+                            زمان پاسخ
+                            <input
+                                type="number"
+                                name="answer_timeout_seconds"
+                                min="5"
+                                max="300"
+                                value="<?= $h($defaultQuizTimeout) ?>"
+                                required
+                            >
+                        </label>
+
+                        <label>
+                            امتیاز پایه
+                            <input
+                                type="number"
+                                name="points"
+                                min="1"
+                                max="1000"
+                                value="<?= $h($defaultQuizPoints) ?>"
+                                required
+                            >
+                        </label>
+
+                        <label>
+                            XP
+                            <input
+                                type="number"
+                                name="xp_reward"
+                                min="1"
+                                max="1000"
+                                value="<?= $h($defaultQuizXp) ?>"
+                                required
+                            >
+                        </label>
+                    </div>
+
+                    <label>
+                        متن سؤال
+                        <textarea
+                            name="question_text"
+                            rows="4"
+                            maxlength="3000"
+                            required
+                        ><?= $h(
+                            is_array($quizEdit)
+                                ? $quizEdit['question_text']
+                                : ''
+                        ) ?></textarea>
+                    </label>
+
+                    <div class="grid two">
+                        <?php foreach (
+                            [
+                                0 => 'A',
+                                1 => 'B',
+                                2 => 'C',
+                                3 => 'D',
+                            ]
+                            as $index => $label
+                        ): ?>
+                            <label>
+                                گزینه <?= $h($label) ?>
+                                <input
+                                    type="text"
+                                    name="option_<?= mb_strtolower($label) ?>"
+                                    maxlength="500"
+                                    value="<?= $h($quizOptions[$index]) ?>"
+                                    required
+                                >
+                                <span class="checkbox-row">
+                                    <input
+                                        type="radio"
+                                        name="correct_option"
+                                        value="<?= $h($index) ?>"
+                                        <?= $quizCorrectOption === $index ? 'checked' : '' ?>
+                                    >
+                                    پاسخ درست
+                                </span>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <label>
+                        توضیح پاسخ
+                        <textarea
+                            name="explanation"
+                            rows="4"
+                            maxlength="2000"
+                        ><?= $h(
+                            is_array($quizEdit)
+                                ? $quizEdit['explanation']
+                                : ''
+                        ) ?></textarea>
+                    </label>
+
+                    <input
+                        type="hidden"
+                        name="enabled"
+                        value="0"
+                    >
+                    <label class="checkbox-row">
+                        <input
+                            type="checkbox"
+                            name="enabled"
+                            value="1"
+                            <?= !is_array($quizEdit) || (int) $quizEdit['enabled'] === 1 ? 'checked' : '' ?>
+                        >
+                        سؤال فعال باشد
+                    </label>
+
+                    <button
+                        type="submit"
+                        class="button primary"
+                    >
+                        ذخیره سؤال
+                    </button>
+                </form>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>بانک سؤال</h2>
+                        <p>
+                            آمار پاسخ صحیح، Timeout و میزان استفاده
+                        </p>
+                    </div>
+                </div>
+
+                <form
+                    method="get"
+                    action="<?= $h($basePath) ?>/"
+                    class="search-form"
+                >
+                    <input
+                        type="hidden"
+                        name="section"
+                        value="quiz"
+                    >
+
+                    <select name="category">
+                        <option value="">همه دسته‌ها</option>
+                        <?php foreach (
+                            $quizData['categories']
+                            as $category
+                        ): ?>
+                            <option
+                                value="<?= $h($category['slug']) ?>"
+                                <?= $quizCategoryFilter === $category['slug'] ? 'selected' : '' ?>
+                            >
+                                <?= $h($category['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+
+                    <select name="difficulty">
+                        <option value="">همه سختی‌ها</option>
+                        <option
+                            value="easy"
+                            <?= $quizDifficultyFilter === 'easy' ? 'selected' : '' ?>
+                        >
+                            آسان
+                        </option>
+                        <option
+                            value="medium"
+                            <?= $quizDifficultyFilter === 'medium' ? 'selected' : '' ?>
+                        >
+                            متوسط
+                        </option>
+                        <option
+                            value="hard"
+                            <?= $quizDifficultyFilter === 'hard' ? 'selected' : '' ?>
+                        >
+                            سخت
+                        </option>
+                    </select>
+
+                    <button
+                        type="submit"
+                        class="button secondary"
+                    >
+                        فیلتر
+                    </button>
+                </form>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>سؤال</th>
+                            <th>دسته</th>
+                            <th>سختی</th>
+                            <th>استفاده</th>
+                            <th>صحیح</th>
+                            <th>Timeout</th>
+                            <th>امتیاز / XP / زمان</th>
+                            <th>وضعیت</th>
+                            <th>عملیات</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $quizData['questions']
+                            as $question
+                        ): ?>
+                            <tr>
+                                <td>#<?= $h($question['id']) ?></td>
+                                <td>
+                                    <?= $h(
+                                        mb_substr(
+                                            (string) $question[
+                                                'question_text'
+                                            ],
+                                            0,
+                                            180
+                                        )
+                                    ) ?>
+                                </td>
+                                <td>
+                                    <?= $h($question['category_name']) ?>
+                                    <small>
+                                        <?= $h($question['question_type']) ?>
+                                    </small>
+                                </td>
+                                <td><?= $h($question['difficulty']) ?></td>
+                                <td><?= $number($question['times_served']) ?></td>
+                                <td><?= $h($question['correct_percent']) ?>%</td>
+                                <td><?= $number($question['timeout_count']) ?></td>
+                                <td>
+                                    <?= $number($question['points']) ?>
+                                    /
+                                    <?= $number($question['xp_reward']) ?>
+                                    /
+                                    <?= $number($question['answer_timeout_seconds']) ?>s
+                                </td>
+                                <td>
+                                    <span class="badge <?= (int) $question['enabled'] === 1 ? 'success' : 'danger' ?>">
+                                        <?= (int) $question['enabled'] === 1 ? 'فعال' : 'غیرفعال' ?>
+                                    </span>
+                                </td>
+                                <td class="actions">
+                                    <a
+                                        class="button small secondary"
+                                        href="<?= $h($basePath) ?>/?section=quiz&amp;edit_question=<?= $h($question['id']) ?>"
+                                    >
+                                        ویرایش
+                                    </a>
+
+                                    <form
+                                        method="post"
+                                        action="<?= $h($basePath) ?>/"
+                                    >
+                                        <input
+                                            type="hidden"
+                                            name="csrf"
+                                            value="<?= $h($csrf) ?>"
+                                        >
+                                        <input
+                                            type="hidden"
+                                            name="action"
+                                            value="toggle_quiz_question"
+                                        >
+                                        <input
+                                            type="hidden"
+                                            name="return_section"
+                                            value="quiz"
+                                        >
+                                        <input
+                                            type="hidden"
+                                            name="question_id"
+                                            value="<?= $h($question['id']) ?>"
+                                        >
+                                        <input
+                                            type="hidden"
+                                            name="enabled"
+                                            value="<?= (int) $question['enabled'] === 1 ? '0' : '1' ?>"
+                                        >
+                                        <button
+                                            type="submit"
+                                            class="button small <?= (int) $question['enabled'] === 1 ? 'danger' : 'primary' ?>"
+                                        >
+                                            <?= (int) $question['enabled'] === 1 ? 'غیرفعال' : 'فعال' ?>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h2>سؤال‌های دشوار</h2>
+                        <p>
+                            سؤال‌های دارای حداقل سه تلاش، مرتب‌شده
+                            بر اساس کمترین درصد پاسخ صحیح
+                        </p>
+                    </div>
+                </div>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>سؤال</th>
+                            <th>دسته</th>
+                            <th>سختی</th>
+                            <th>تلاش</th>
+                            <th>درست</th>
+                            <th>غلط</th>
+                            <th>Timeout</th>
+                            <th>درصد صحیح</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php foreach (
+                            $quizData['difficult']
+                            as $question
+                        ): ?>
+                            <tr>
+                                <td>#<?= $h($question['id']) ?></td>
+                                <td>
+                                    <?= $h(
+                                        mb_substr(
+                                            (string) $question[
+                                                'question_text'
+                                            ],
+                                            0,
+                                            200
+                                        )
+                                    ) ?>
+                                </td>
+                                <td><?= $h($question['category_name']) ?></td>
+                                <td><?= $h($question['difficulty']) ?></td>
+                                <td><?= $number($question['attempts']) ?></td>
+                                <td><?= $number($question['correct_count']) ?></td>
+                                <td><?= $number($question['incorrect_count']) ?></td>
+                                <td><?= $number($question['timeout_count']) ?></td>
+                                <td><?= $h($question['correct_percent']) ?>%</td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
 
         <?php elseif ($section === 'group_management'): ?>
             <?php

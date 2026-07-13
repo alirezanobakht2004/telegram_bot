@@ -19,6 +19,10 @@ use SmartToolbox\Modules\GroupManagement\GroupAuthorization;
 use SmartToolbox\Modules\GroupManagement\GroupModerationService;
 use SmartToolbox\Modules\GroupManagement\GroupRepository;
 use SmartToolbox\Modules\GroupManagement\GroupWorker;
+use SmartToolbox\Modules\Quiz\QuizCsvService;
+use SmartToolbox\Modules\Quiz\QuizMaintenanceWorker;
+use SmartToolbox\Modules\Quiz\QuizRepository;
+use SmartToolbox\Modules\Quiz\QuizScoring;
 use Throwable;
 
 final class AdminPanelService
@@ -220,6 +224,33 @@ final class AdminPanelService
                  WHERE action LIKE 'automod.%'
                    AND julianday(created_at)
                     >= julianday('now', 'start of day')"
+            ),
+            'quiz_questions_enabled' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_questions
+                 WHERE enabled = 1'
+            ),
+            'quiz_players' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_user_scores
+                 WHERE total_answers > 0'
+            ),
+            'quiz_answers_today' => $this->count(
+                "SELECT COUNT(*)
+                 FROM quiz_sessions
+                 WHERE status = 'answered'
+                   AND date(
+                        answered_at,
+                        'unixepoch',
+                        'localtime'
+                   ) = date('now', 'localtime')"
+            ),
+            'quiz_active_sessions' => $this->count(
+                "SELECT COUNT(*)
+                 FROM quiz_sessions
+                 WHERE status = 'active'
+                   AND expires_at >= :quiz_now",
+                ['quiz_now' => time()]
             ),
             'usage_events_today' => $this->count(
                 'SELECT COUNT(*)
@@ -1076,6 +1107,964 @@ final class AdminPanelService
     }
 
 
+
+    /**
+     * @return array{
+     *     summary:array<string,int|float>,
+     *     categories:list<array<string,mixed>>,
+     *     questions:list<array<string,mixed>>,
+     *     difficult:list<array<string,mixed>>,
+     *     edit_question:?array<string,mixed>
+     * }
+     */
+    public function quizOverview(
+        int $editQuestionId = 0,
+        string $categorySlug = '',
+        string $difficulty = '',
+        int $limit = 100
+    ): array {
+        $limit = max(10, min(500, $limit));
+
+        $summary = [
+            'categories' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_categories'
+            ),
+            'categories_enabled' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_categories
+                 WHERE enabled = 1'
+            ),
+            'questions' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_questions'
+            ),
+            'questions_enabled' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_questions
+                 WHERE enabled = 1'
+            ),
+            'players' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_user_scores
+                 WHERE total_answers > 0'
+            ),
+            'answers' => $this->count(
+                "SELECT COUNT(*)
+                 FROM quiz_sessions
+                 WHERE status = 'answered'"
+            ),
+            'correct_answers' => $this->count(
+                "SELECT COUNT(*)
+                 FROM quiz_sessions
+                 WHERE status = 'answered'
+                   AND is_correct = 1"
+            ),
+            'daily_attempts' => $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_daily_attempts'
+            ),
+            'active_sessions' => $this->count(
+                "SELECT COUNT(*)
+                 FROM quiz_sessions
+                 WHERE status = 'active'
+                   AND expires_at >= :now",
+                ['now' => time()]
+            ),
+        ];
+
+        $summary['accuracy'] =
+            $summary['answers'] > 0
+                ? round(
+                    $summary['correct_answers']
+                    / $summary['answers']
+                    * 100,
+                    2
+                )
+                : 0.0;
+
+        $categories = $this->pdo->query(
+            'SELECT
+                c.*,
+                COUNT(q.id) AS question_count,
+                COALESCE(
+                    SUM(q.times_served),
+                    0
+                ) AS served_count,
+                COALESCE(
+                    SUM(q.correct_count),
+                    0
+                ) AS correct_count,
+                COALESCE(
+                    SUM(q.incorrect_count),
+                    0
+                ) AS incorrect_count,
+                COALESCE(
+                    SUM(q.timeout_count),
+                    0
+                ) AS timeout_count
+             FROM quiz_categories AS c
+             LEFT JOIN quiz_questions AS q
+                ON q.category_id = c.id
+             GROUP BY c.id
+             ORDER BY
+                c.sort_order ASC,
+                c.name ASC'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $conditions = ['1 = 1'];
+        $parameters = [];
+
+        $categorySlug = trim($categorySlug);
+
+        if ($categorySlug !== '') {
+            $conditions[] =
+                'LOWER(c.slug) = LOWER(:category_slug)';
+            $parameters['category_slug'] =
+                $categorySlug;
+        }
+
+        if (
+            in_array(
+                $difficulty,
+                ['easy', 'medium', 'hard'],
+                true
+            )
+        ) {
+            $conditions[] =
+                'q.difficulty = :difficulty';
+            $parameters['difficulty'] =
+                $difficulty;
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT
+                q.*,
+                c.slug AS category_slug,
+                c.name AS category_name,
+                c.enabled AS category_enabled,
+                (
+                    q.correct_count
+                    + q.incorrect_count
+                    + q.timeout_count
+                ) AS attempts,
+                CASE
+                    WHEN (
+                        q.correct_count
+                        + q.incorrect_count
+                    ) > 0
+                    THEN ROUND(
+                        q.correct_count * 100.0
+                        / (
+                            q.correct_count
+                            + q.incorrect_count
+                        ),
+                        2
+                    )
+                    ELSE 0
+                END AS correct_percent
+             FROM quiz_questions AS q
+             INNER JOIN quiz_categories AS c
+                ON c.id = q.category_id
+             WHERE '
+            . implode(' AND ', $conditions)
+            . ' ORDER BY q.id DESC
+                LIMIT :limit'
+        );
+
+        foreach ($parameters as $key => $value) {
+            $statement->bindValue(
+                ':' . $key,
+                $value,
+                PDO::PARAM_STR
+            );
+        }
+
+        $statement->bindValue(
+            ':limit',
+            $limit,
+            PDO::PARAM_INT
+        );
+
+        $statement->execute();
+
+        $questions = $statement->fetchAll(
+            PDO::FETCH_ASSOC
+        );
+
+        $questions = is_array($questions)
+            ? $questions
+            : [];
+
+        $optionStatement = $this->pdo->prepare(
+            'SELECT
+                id,
+                option_text,
+                is_correct,
+                sort_order
+             FROM quiz_question_options
+             WHERE question_id = :question_id
+             ORDER BY sort_order ASC'
+        );
+
+        foreach ($questions as &$question) {
+            $optionStatement->execute([
+                'question_id' =>
+                    (int) $question['id'],
+            ]);
+
+            $question['options'] =
+                $optionStatement->fetchAll(
+                    PDO::FETCH_ASSOC
+                ) ?: [];
+        }
+        unset($question);
+
+        $difficult = $this->pdo->query(
+            'SELECT
+                q.id,
+                q.question_text,
+                q.difficulty,
+                c.name AS category_name,
+                q.times_served,
+                q.correct_count,
+                q.incorrect_count,
+                q.timeout_count,
+                (
+                    q.correct_count
+                    + q.incorrect_count
+                    + q.timeout_count
+                ) AS attempts,
+                CASE
+                    WHEN (
+                        q.correct_count
+                        + q.incorrect_count
+                    ) > 0
+                    THEN ROUND(
+                        q.correct_count * 100.0
+                        / (
+                            q.correct_count
+                            + q.incorrect_count
+                        ),
+                        2
+                    )
+                    ELSE 0
+                END AS correct_percent
+             FROM quiz_questions AS q
+             INNER JOIN quiz_categories AS c
+                ON c.id = q.category_id
+             WHERE (
+                q.correct_count
+                + q.incorrect_count
+                + q.timeout_count
+             ) >= 3
+             ORDER BY
+                correct_percent ASC,
+                attempts DESC
+             LIMIT 20'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $editQuestion = null;
+
+        if ($editQuestionId > 0) {
+            $editStatement = $this->pdo->prepare(
+                'SELECT
+                    q.*,
+                    c.slug AS category_slug,
+                    c.name AS category_name
+                 FROM quiz_questions AS q
+                 INNER JOIN quiz_categories AS c
+                    ON c.id = q.category_id
+                 WHERE q.id = :id
+                 LIMIT 1'
+            );
+
+            $editStatement->execute([
+                'id' => $editQuestionId,
+            ]);
+
+            $editQuestion = $editStatement
+                ->fetch(PDO::FETCH_ASSOC);
+
+            if (is_array($editQuestion)) {
+                $optionStatement->execute([
+                    'question_id' =>
+                        $editQuestionId,
+                ]);
+
+                $editQuestion['options'] =
+                    $optionStatement->fetchAll(
+                        PDO::FETCH_ASSOC
+                    ) ?: [];
+            } else {
+                $editQuestion = null;
+            }
+        }
+
+        return [
+            'summary' => $summary,
+            'categories' => is_array($categories)
+                ? $categories
+                : [],
+            'questions' => $questions,
+            'difficult' => is_array($difficult)
+                ? $difficult
+                : [],
+            'edit_question' => $editQuestion,
+        ];
+    }
+
+    public function saveQuizCategory(
+        int $id,
+        string $slug,
+        string $name,
+        string $description,
+        bool $enabled,
+        int $sortOrder,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        $slug = mb_strtolower(trim($slug));
+        $name = trim($name);
+
+        if (
+            preg_match(
+                '/^[a-z0-9][a-z0-9_-]{1,49}$/',
+                $slug
+            ) !== 1
+        ) {
+            throw new RuntimeException(
+                'Slug دسته باید انگلیسی و شامل حروف، عدد، خط تیره یا زیرخط باشد.'
+            );
+        }
+
+        if (
+            $name === ''
+            || mb_strlen($name) > 150
+        ) {
+            throw new RuntimeException(
+                'نام دسته معتبر نیست.'
+            );
+        }
+
+        $now = date(DATE_ATOM);
+
+        if ($id > 0) {
+            $statement = $this->pdo->prepare(
+                'UPDATE quiz_categories
+                 SET
+                    slug = :slug,
+                    name = :name,
+                    description = :description,
+                    enabled = :enabled,
+                    sort_order = :sort_order,
+                    updated_at = :updated_at
+                 WHERE id = :id'
+            );
+
+            $statement->execute([
+                'slug' => $slug,
+                'name' => $name,
+                'description' =>
+                    trim($description) ?: null,
+                'enabled' => $enabled ? 1 : 0,
+                'sort_order' => $sortOrder,
+                'updated_at' => $now,
+                'id' => $id,
+            ]);
+
+            if ($statement->rowCount() === 0) {
+                throw new RuntimeException(
+                    'دسته برای ویرایش پیدا نشد.'
+                );
+            }
+
+            $categoryId = $id;
+        } else {
+            $statement = $this->pdo->prepare(
+                'INSERT INTO quiz_categories (
+                    slug,
+                    name,
+                    description,
+                    enabled,
+                    sort_order,
+                    created_at,
+                    updated_at
+                 ) VALUES (
+                    :slug,
+                    :name,
+                    :description,
+                    :enabled,
+                    :sort_order,
+                    :created_at,
+                    :updated_at
+                 )'
+            );
+
+            $statement->execute([
+                'slug' => $slug,
+                'name' => $name,
+                'description' =>
+                    trim($description) ?: null,
+                'enabled' => $enabled ? 1 : 0,
+                'sort_order' => $sortOrder,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $categoryId = (int)
+                $this->pdo->lastInsertId();
+        }
+
+        $this->audit(
+            $identity,
+            'quiz.category.save',
+            (string) $categoryId,
+            [
+                'slug' => $slug,
+                'enabled' => $enabled,
+                'sort_order' => $sortOrder,
+            ],
+            $ip,
+            $userAgent
+        );
+
+        return $categoryId;
+    }
+
+    public function setQuizCategoryEnabled(
+        int $categoryId,
+        bool $enabled,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $statement = $this->pdo->prepare(
+            'UPDATE quiz_categories
+             SET
+                enabled = :enabled,
+                updated_at = :updated_at
+             WHERE id = :id'
+        );
+
+        $statement->execute([
+            'enabled' => $enabled ? 1 : 0,
+            'updated_at' => date(DATE_ATOM),
+            'id' => $categoryId,
+        ]);
+
+        if ($statement->rowCount() === 0) {
+            throw new RuntimeException(
+                'دسته پیدا نشد.'
+            );
+        }
+
+        $this->audit(
+            $identity,
+            'quiz.category.toggle',
+            (string) $categoryId,
+            ['enabled' => $enabled],
+            $ip,
+            $userAgent
+        );
+    }
+
+    /**
+     * @param list<string> $options
+     */
+    public function saveQuizQuestion(
+        int $id,
+        int $categoryId,
+        string $questionType,
+        string $difficulty,
+        string $questionText,
+        array $options,
+        int $correctOption,
+        string $explanation,
+        int $points,
+        int $xpReward,
+        int $timeoutSeconds,
+        bool $enabled,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): int {
+        if (
+            !in_array(
+                $questionType,
+                ['trivia', 'word'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'نوع سؤال معتبر نیست.'
+            );
+        }
+
+        if (
+            !in_array(
+                $difficulty,
+                ['easy', 'medium', 'hard'],
+                true
+            )
+        ) {
+            throw new RuntimeException(
+                'سختی سؤال معتبر نیست.'
+            );
+        }
+
+        $questionText = trim($questionText);
+
+        if (
+            $questionText === ''
+            || mb_strlen($questionText) > 3000
+        ) {
+            throw new RuntimeException(
+                'متن سؤال معتبر نیست.'
+            );
+        }
+
+        if (count($options) !== 4) {
+            throw new RuntimeException(
+                'سؤال باید دقیقاً چهار گزینه داشته باشد.'
+            );
+        }
+
+        $options = array_values(
+            array_map(
+                static fn (mixed $value): string =>
+                    trim((string) $value),
+                $options
+            )
+        );
+
+        foreach ($options as $option) {
+            if (
+                $option === ''
+                || mb_strlen($option) > 500
+            ) {
+                throw new RuntimeException(
+                    'تمام گزینه‌ها باید تکمیل شوند.'
+                );
+            }
+        }
+
+        if (count(array_unique($options)) !== 4) {
+            throw new RuntimeException(
+                'گزینه‌های سؤال باید متفاوت باشند.'
+            );
+        }
+
+        if (
+            $correctOption < 0
+            || $correctOption > 3
+        ) {
+            throw new RuntimeException(
+                'گزینه درست معتبر نیست.'
+            );
+        }
+
+        if ($points < 1 || $points > 1000) {
+            throw new RuntimeException(
+                'امتیاز باید بین ۱ و ۱۰۰۰ باشد.'
+            );
+        }
+
+        if ($xpReward < 1 || $xpReward > 1000) {
+            throw new RuntimeException(
+                'XP باید بین ۱ و ۱۰۰۰ باشد.'
+            );
+        }
+
+        if (
+            $timeoutSeconds < 5
+            || $timeoutSeconds > 300
+        ) {
+            throw new RuntimeException(
+                'زمان پاسخ باید بین ۵ و ۳۰۰ ثانیه باشد.'
+            );
+        }
+
+        if (
+            $this->count(
+                'SELECT COUNT(*)
+                 FROM quiz_categories
+                 WHERE id = :id',
+                ['id' => $categoryId]
+            ) !== 1
+        ) {
+            throw new RuntimeException(
+                'دسته سؤال پیدا نشد.'
+            );
+        }
+
+        $this->pdo->exec('BEGIN IMMEDIATE');
+
+        try {
+            $now = date(DATE_ATOM);
+
+            if ($id > 0) {
+                $statement = $this->pdo->prepare(
+                    'UPDATE quiz_questions
+                     SET
+                        category_id =
+                            :category_id,
+                        question_type =
+                            :question_type,
+                        difficulty =
+                            :difficulty,
+                        question_text =
+                            :question_text,
+                        explanation =
+                            :explanation,
+                        points = :points,
+                        xp_reward = :xp_reward,
+                        answer_timeout_seconds =
+                            :timeout,
+                        enabled = :enabled,
+                        source = :source,
+                        created_by =
+                            :created_by,
+                        updated_at =
+                            :updated_at
+                     WHERE id = :id'
+                );
+
+                $statement->execute([
+                    'category_id' =>
+                        $categoryId,
+                    'question_type' =>
+                        $questionType,
+                    'difficulty' =>
+                        $difficulty,
+                    'question_text' =>
+                        $questionText,
+                    'explanation' =>
+                        trim($explanation) ?: null,
+                    'points' => $points,
+                    'xp_reward' => $xpReward,
+                    'timeout' => $timeoutSeconds,
+                    'enabled' => $enabled ? 1 : 0,
+                    'source' => 'admin',
+                    'created_by' => $identity,
+                    'updated_at' => $now,
+                    'id' => $id,
+                ]);
+
+                if ($statement->rowCount() === 0) {
+                    $exists = $this->count(
+                        'SELECT COUNT(*)
+                         FROM quiz_questions
+                         WHERE id = :id',
+                        ['id' => $id]
+                    );
+
+                    if ($exists !== 1) {
+                        throw new RuntimeException(
+                            'سؤال برای ویرایش پیدا نشد.'
+                        );
+                    }
+                }
+
+                $questionId = $id;
+            } else {
+                $statement = $this->pdo->prepare(
+                    'INSERT INTO quiz_questions (
+                        category_id,
+                        question_type,
+                        difficulty,
+                        question_text,
+                        explanation,
+                        points,
+                        xp_reward,
+                        answer_timeout_seconds,
+                        enabled,
+                        source,
+                        created_by,
+                        created_at,
+                        updated_at
+                     ) VALUES (
+                        :category_id,
+                        :question_type,
+                        :difficulty,
+                        :question_text,
+                        :explanation,
+                        :points,
+                        :xp_reward,
+                        :timeout,
+                        :enabled,
+                        :source,
+                        :created_by,
+                        :created_at,
+                        :updated_at
+                     )'
+                );
+
+                $statement->execute([
+                    'category_id' =>
+                        $categoryId,
+                    'question_type' =>
+                        $questionType,
+                    'difficulty' =>
+                        $difficulty,
+                    'question_text' =>
+                        $questionText,
+                    'explanation' =>
+                        trim($explanation) ?: null,
+                    'points' => $points,
+                    'xp_reward' => $xpReward,
+                    'timeout' => $timeoutSeconds,
+                    'enabled' => $enabled ? 1 : 0,
+                    'source' => 'admin',
+                    'created_by' => $identity,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                $questionId = (int)
+                    $this->pdo->lastInsertId();
+            }
+
+            $delete = $this->pdo->prepare(
+                'DELETE FROM quiz_question_options
+                 WHERE question_id = :question_id'
+            );
+
+            $delete->execute([
+                'question_id' => $questionId,
+            ]);
+
+            $insert = $this->pdo->prepare(
+                'INSERT INTO quiz_question_options (
+                    question_id,
+                    option_text,
+                    is_correct,
+                    sort_order
+                 ) VALUES (
+                    :question_id,
+                    :option_text,
+                    :is_correct,
+                    :sort_order
+                 )'
+            );
+
+            foreach (
+                $options
+                as $index => $option
+            ) {
+                $insert->execute([
+                    'question_id' =>
+                        $questionId,
+                    'option_text' => $option,
+                    'is_correct' =>
+                        $index === $correctOption
+                            ? 1
+                            : 0,
+                    'sort_order' => $index,
+                ]);
+            }
+
+            $this->pdo->exec('COMMIT');
+        } catch (Throwable $exception) {
+            try {
+                $this->pdo->exec('ROLLBACK');
+            } catch (Throwable) {
+            }
+
+            throw $exception;
+        }
+
+        $this->audit(
+            $identity,
+            'quiz.question.save',
+            (string) $questionId,
+            [
+                'category_id' => $categoryId,
+                'difficulty' => $difficulty,
+                'enabled' => $enabled,
+                'points' => $points,
+                'xp_reward' => $xpReward,
+                'timeout' => $timeoutSeconds,
+            ],
+            $ip,
+            $userAgent
+        );
+
+        return $questionId;
+    }
+
+    public function setQuizQuestionEnabled(
+        int $questionId,
+        bool $enabled,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): void {
+        $statement = $this->pdo->prepare(
+            'UPDATE quiz_questions
+             SET
+                enabled = :enabled,
+                updated_at = :updated_at
+             WHERE id = :id'
+        );
+
+        $statement->execute([
+            'enabled' => $enabled ? 1 : 0,
+            'updated_at' => date(DATE_ATOM),
+            'id' => $questionId,
+        ]);
+
+        if ($statement->rowCount() === 0) {
+            throw new RuntimeException(
+                'سؤال پیدا نشد.'
+            );
+        }
+
+        $this->audit(
+            $identity,
+            'quiz.question.toggle',
+            (string) $questionId,
+            ['enabled' => $enabled],
+            $ip,
+            $userAgent
+        );
+    }
+
+    /**
+     * @return array{
+     *     imported:int,
+     *     updated:int,
+     *     categories:int
+     * }
+     */
+    public function importQuizCsv(
+        string $temporaryPath,
+        string $originalName,
+        int $size,
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): array {
+        if (
+            $size <= 0
+            || $size > 2097152
+        ) {
+            throw new RuntimeException(
+                'حجم CSV باید حداکثر ۲ مگابایت باشد.'
+            );
+        }
+
+        $extension = mb_strtolower(
+            pathinfo(
+                $originalName,
+                PATHINFO_EXTENSION
+            )
+        );
+
+        if ($extension !== 'csv') {
+            throw new RuntimeException(
+                'فقط فایل CSV پذیرفته می‌شود.'
+            );
+        }
+
+        $result = (
+            new QuizCsvService($this->pdo)
+        )->importFile(
+            $temporaryPath,
+            $identity,
+            2097152,
+            1000
+        );
+
+        $this->audit(
+            $identity,
+            'quiz.csv.import',
+            $originalName,
+            $result,
+            $ip,
+            $userAgent
+        );
+
+        return $result;
+    }
+
+    /**
+     * @param resource $stream
+     */
+    public function streamQuizCsv(
+        mixed $stream
+    ): void {
+        (new QuizCsvService($this->pdo))
+            ->streamExport($stream);
+    }
+
+    /**
+     * @return array{
+     *     expired:int,
+     *     pruned:int
+     * }
+     */
+    public function processQuizMaintenance(
+        string $identity,
+        string $ip,
+        string $userAgent
+    ): array {
+        $result = (
+            new QuizMaintenanceWorker(
+                $this->quizRepository()
+            )
+        )->run(
+            (int) $this->runtime->get(
+                'modules.quiz_games.worker.batch_size',
+                200
+            ),
+            (int) $this->runtime->get(
+                'modules.quiz_games.retention_days',
+                180
+            )
+        );
+
+        $this->audit(
+            $identity,
+            'quiz.maintenance',
+            'manual',
+            $result,
+            $ip,
+            $userAgent
+        );
+
+        return $result;
+    }
+
+    private function quizRepository(): QuizRepository
+    {
+        return new QuizRepository(
+            pdo: $this->pdo,
+            scoring: new QuizScoring(
+                timeBonusMaxPercent: (int)
+                    $this->runtime->get(
+                        'modules.quiz_games.scoring.time_bonus_max_percent',
+                        50
+                    ),
+                streakBonusPercent: (int)
+                    $this->runtime->get(
+                        'modules.quiz_games.scoring.streak_bonus_percent',
+                        5
+                    ),
+                participationXp: (int)
+                    $this->runtime->get(
+                        'modules.quiz_games.scoring.participation_xp',
+                        1
+                    ),
+                xpPerLevel: (int)
+                    $this->runtime->get(
+                        'modules.quiz_games.scoring.xp_per_level',
+                        100
+                    )
+            )
+        );
+    }
 
     /**
      * @return array{

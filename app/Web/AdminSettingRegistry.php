@@ -724,6 +724,132 @@ final class AdminSettingRegistry
                 1000
             ),
             ...$this->module(
+                'quiz_games',
+                'مسابقه، آزمون و امتیاز',
+                [
+                    'leaderboard_size' =>
+                        $this->integer(
+                            'تعداد نفرات جدول',
+                            3,
+                            100,
+                            'نفر'
+                        ),
+                    'retention_days' =>
+                        $this->integer(
+                            'نگهداری Sessionها',
+                            7,
+                            3650,
+                            'روز'
+                        ),
+                    'scoring.time_bonus_max_percent' =>
+                        $this->integer(
+                            'حداکثر Bonus سرعت',
+                            0,
+                            100,
+                            'درصد امتیاز پایه'
+                        ),
+                    'scoring.streak_bonus_percent' =>
+                        $this->integer(
+                            'Bonus هر Streak',
+                            0,
+                            50,
+                            'درصد امتیاز پایه'
+                        ),
+                    'scoring.participation_xp' =>
+                        $this->integer(
+                            'XP پاسخ نادرست',
+                            0,
+                            100,
+                            'XP'
+                        ),
+                    'scoring.xp_per_level' =>
+                        $this->integer(
+                            'XP هر Level',
+                            10,
+                            100000,
+                            'XP'
+                        ),
+                    'scoring.points.easy' =>
+                        $this->integer(
+                            'امتیاز ریاضی آسان',
+                            1,
+                            1000,
+                            'امتیاز'
+                        ),
+                    'scoring.points.medium' =>
+                        $this->integer(
+                            'امتیاز ریاضی متوسط',
+                            1,
+                            1000,
+                            'امتیاز'
+                        ),
+                    'scoring.points.hard' =>
+                        $this->integer(
+                            'امتیاز ریاضی سخت',
+                            1,
+                            1000,
+                            'امتیاز'
+                        ),
+                    'scoring.xp.easy' =>
+                        $this->integer(
+                            'XP ریاضی آسان',
+                            1,
+                            1000,
+                            'XP'
+                        ),
+                    'scoring.xp.medium' =>
+                        $this->integer(
+                            'XP ریاضی متوسط',
+                            1,
+                            1000,
+                            'XP'
+                        ),
+                    'scoring.xp.hard' =>
+                        $this->integer(
+                            'XP ریاضی سخت',
+                            1,
+                            1000,
+                            'XP'
+                        ),
+                    'answer_timeouts.easy' =>
+                        $this->integer(
+                            'زمان پاسخ آسان',
+                            5,
+                            300,
+                            'ثانیه'
+                        ),
+                    'answer_timeouts.medium' =>
+                        $this->integer(
+                            'زمان پاسخ متوسط',
+                            5,
+                            300,
+                            'ثانیه'
+                        ),
+                    'answer_timeouts.hard' =>
+                        $this->integer(
+                            'زمان پاسخ سخت',
+                            5,
+                            300,
+                            'ثانیه'
+                        ),
+                    'worker.batch_size' =>
+                        $this->integer(
+                            'Batch پاک‌سازی Quiz',
+                            1,
+                            1000,
+                            'Session'
+                        ),
+                    'worker.interval_seconds' =>
+                        $this->integer(
+                            'فاصله Job Quiz',
+                            60,
+                            86400,
+                            'ثانیه'
+                        ),
+                ],
+                2000
+            ),
+            ...$this->module(
                 'group_management',
                 'مدیریت حرفه‌ای گروه‌ها',
                 [
